@@ -957,6 +957,21 @@ class GroupedWorkDriver extends IndexRecordDriver {
 		$cleanIsbn = $this->getCleanISBN();
 		/** @var Library $library */
 		global $library;
+
+		if ($library->getGroupedWorkDisplaySettings()->preferIlsDescription == 1){
+			foreach ($this->getRelatedRecords() as $record){
+				if ($record->source == 'ils') {
+					$recordDriver = $record->getDriver();
+					if ($recordDriver) {
+						$ilsDescription = $recordDriver->getDescription();
+						if (!empty($ilsDescription)) {
+							$description = $ilsDescription;
+							break;
+						}
+					}
+				}
+			}
+		}
 		if ($description == null) {
 			$description = $this->getDescriptionFast();
 		}

@@ -55,6 +55,7 @@ class GroupedWorkDisplaySetting extends DataObject {
 	public $showStandardReviews;
 	public $showGoodReadsReviews;
 	public $preferSyndeticsSummary;
+	public $preferIlsDescription;
 	public $showSimilarTitles;
 	public $showSimilarAuthors;
 	public $showRatings; // User Ratings
@@ -494,6 +495,14 @@ class GroupedWorkDisplaySetting extends DataObject {
 						'description' => 'Whether or not the Description loaded from an enrichment service should be preferred over the Description in the Marc Record.',
 						'hideInLists' => true,
 						'default' => 1,
+					],
+					'preferIlsDescription' => [
+						'property' => 'preferIlsDescription',
+						'type' => 'checkbox',
+						'label' => 'Prefer ILS Description',
+						'description' => 'Whether or not the Description loaded from ILS should be preferred over eContent Description',
+						'hideInLists' => true,
+						'default' => 0,
 					],
 					'showSimilarAuthors' => [
 						'property' => 'showSimilarAuthors',
