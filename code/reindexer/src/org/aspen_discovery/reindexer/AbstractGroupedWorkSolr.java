@@ -37,6 +37,7 @@ public abstract class AbstractGroupedWorkSolr {
 	protected HashSet<String> description = new HashSet<>();
 	protected String displayDescription = "";
 	protected String displayDescriptionFormat = "";
+	protected String ilsDescription = "";
 	protected String displayTitle;
 	protected Long earliestPublicationDate = null;
 	protected HashSet<String> editions = new HashSet<>();
@@ -1228,6 +1229,15 @@ public abstract class AbstractGroupedWorkSolr {
 
 	void addKeywords(HashSet<String> keywords) {
 		this.keywords.addAll(keywords);
+	}
+
+	void addIlsDescription(String description) {
+		if (description == null || description.isEmpty()){
+			return;
+		} 
+		if (this.ilsDescription == null || this.ilsDescription.isEmpty()){
+			this.ilsDescription = description;
+		}
 	}
 
 	void addDescription(String description, String formatCategory) {

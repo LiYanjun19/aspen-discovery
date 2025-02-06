@@ -157,6 +157,15 @@ function getUpdates25_02_00(): array {
 			]
 		], //user_checkout_add_showFineButton
 
+		//Yanjun Li - ByWater
+		'prefer_ils_description' => [
+			'title' => 'Prefer ILS Description',
+			'description' => 'Add a new setting to prefer ILS Description over eContent Description',
+			'sql' => [
+				"ALTER TABLE grouped_work_display_settings ADD COLUMN preferIlsDescription TINYINT(1) DEFAULT 0",
+			]
+		], //prefer_ils_description
+
 		//Lucas Montoya - Theke Solutions
 
 		//Yanjun Li - BWS

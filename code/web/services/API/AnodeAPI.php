@@ -148,8 +148,15 @@ class AnodeAPI extends Action {
 				if (!isset($groupedWorkRecord['image'])) {
 					$groupedWork['image'] = '/bookcover.php?id=' . $groupedWork['id'] . '&size=medium&type=grouped_work';
 				}
-				if (isset($groupedWorkRecord['display_description'])) {
-					$groupedWork['description'] = $groupedWorkRecord['display_description'];
+				global $library;
+				if ($library->getGroupedWorkDisplaySettings()->preferIlsDescription == 1) {
+					if (isset($groupedWorkRecord['ils_description'])) {
+						$groupedWork['description'] = $groupedWorkRecord['ils_description'];
+					}
+				} else {
+					if (isset($groupedWorkRecord['display_description'])) {
+						$groupedWork['description'] = $groupedWorkRecord['display_description'];
+					}
 				}
 				if (isset($groupedWorkRecord['rating'])) {
 					$groupedWork['rating'] = $groupedWorkRecord['rating'];
@@ -234,6 +241,7 @@ class AnodeAPI extends Action {
 				unset($groupedWork['accelerated_reader_interest_level']);
 				unset($groupedWork['primary_isbn']);
 				unset($groupedWork['display_description']);
+				unset($groupedWork['ils_description']);
 				unset($groupedWork['auth_author2']);
 				unset($groupedWork['author2-role']);
 				unset($groupedWork['series_with_volume']);

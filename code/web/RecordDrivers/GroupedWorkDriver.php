@@ -998,20 +998,34 @@ class GroupedWorkDriver extends IndexRecordDriver {
 	private $fastDescription = null;
 
 	function getDescriptionFast($useHighlighting = false) {
+		global $library;
 		// Don't check for highlighted values if highlighting is disabled:
 		if ($this->highlight && $useHighlighting) {
-			if (isset($this->fields['_highlighting']['display_description'][0])) {
-				return $this->fields['_highlighting']['display_description'][0];
+			if ($library->getGroupedWorkDisplaySettings()->preferIlsDescription == 1) {
+				if (isset($this->fields['_highlighting']['ils_description'][0])) {
+					return $this->fields['_highlighting']['ils_description'][0];
+				}
+			} else {
+				if (isset($this->fields['_highlighting']['display_description'][0])) {
+					return $this->fields['_highlighting']['display_description'][0];
+				}
 			}
 		}
 		if ($this->fastDescription != null) {
 			return $this->fastDescription;
 		}
-		if (!empty($this->fields['display_description'])) {
-			$this->fastDescription = $this->fields['display_description'];
+		if ($library->getGroupedWorkDisplaySettings()->preferIlsDescription == 1) {
+			if (!empty($this->fields['ils_description'])) {
+				$this->fastDescription = $this->fields['ils_description'];
+			} else {
+				$this->fastDescription = "";
+			}
 		} else {
-			$this->fastDescription = "";
-
+			if (!empty($this->fields['display_description'])) {
+				$this->fastDescription = $this->fields['display_description'];
+			} else {
+				$this->fastDescription = "";
+			}
 		}
 		return $this->fastDescription;
 	}
