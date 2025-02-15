@@ -1745,7 +1745,7 @@ class Sierra extends Millennium {
 					];
 					$fields[$customField->section]['properties']['pinConfirmation'] = [
 						'property' => 'pinConfirmation',
-						'type' => 'pinConfirmation',  
+						'type' => 'pinConfirmation',
 						'label' => 'Confirm PIN',
 						'required' => true
 					];
@@ -1796,7 +1796,7 @@ class Sierra extends Millennium {
 				$field = $fieldObj->ilsName;
 				if ($field == 'firstName') {
 					if (!empty($_REQUEST['middleName'])) {
-						$fullName = $_REQUEST['lastName'] . ', ' . $_REQUEST['middleName'] . ', ' . $_REQUEST['firstName'];
+						$fullName = $_REQUEST['lastName'] . ', ' . $_REQUEST['firstName'] . ' ' . $_REQUEST['middleName'];
 					} else {
 						$fullName = $_REQUEST['lastName'] . ', ' . $_REQUEST['firstName'];
 					}
@@ -1840,7 +1840,7 @@ class Sierra extends Millennium {
 					$params['pin'] = $_REQUEST['pin'];
 				}
 			}
-     
+
 			$barcodePrefix = '';
 			// set barcode suffix length to 7 if not set
 			$barcodeSuffixLength = 7;
@@ -1851,7 +1851,7 @@ class Sierra extends Millennium {
 				$barcodeSuffixLength = $selfRegistrationForm->selfRegBarcodeSuffixLength;
 			}
 			$barcode = $this->generateBarcode($barcodePrefix, $barcodeSuffixLength);
-			
+
 			if ($barcode) {
 				$params['barcodes'] = [$barcode];
 			} else {
@@ -1860,7 +1860,7 @@ class Sierra extends Millennium {
 					'message' => 'Could not generate a valid library card number. Please try again later.'
 				];
 			}
-            
+
 			if (!empty($selfRegistrationForm->selfRegExpirationDays)) {
 				$expirationDays = $selfRegistrationForm->selfRegExpirationDays;
 			} else {
@@ -1897,8 +1897,7 @@ class Sierra extends Millennium {
 		if ($this->lastResponseCode == 200) {
 			$selfRegResult = [
 				'success' => true,
-				'barcode' => $params['barcodes'][0],
-				'password' => $params['pin']
+				'barcode' => $params['barcodes'][0]
 			];
 		}
 
@@ -2259,15 +2258,15 @@ class Sierra extends Millennium {
 
 	public function getTitleAndAuthorForInnReachCheckout($checkoutId) {
 		/** @noinspection SqlResolve */
-		$checkoutInfoSql = "SELECT 
+		$checkoutInfoSql = "SELECT
 			  bib_record_property.best_title as title,
 			  bib_record_property.best_author as author,
 			  bib_record_property.best_title_norm as sort_title
-			FROM 
-			  sierra_view.checkout, 
-			  sierra_view.bib_record_item_record_link, 
+			FROM
+			  sierra_view.checkout,
+			  sierra_view.bib_record_item_record_link,
 			  sierra_view.bib_record_property
-			WHERE 
+			WHERE
 			  sierra_view.checkout.id = $1
 			  AND checkout.item_record_id = bib_record_item_record_link.item_record_id
 			  AND bib_record_item_record_link.bib_record_id = bib_record_property.bib_record_id";
@@ -2279,15 +2278,15 @@ class Sierra extends Millennium {
 
 	public function getTitleAndAuthorForInnReachHold(string $holdId): array {
 		/** @noinspection SqlResolve */
-		$holdInfoSql = "SELECT 
+		$holdInfoSql = "SELECT
 			  bib_record_property.best_title as title,
 			  bib_record_property.best_author as author,
 			  bib_record_property.best_title_norm as sort_title
-			FROM 
-			  sierra_view.hold, 
-			  sierra_view.bib_record_item_record_link, 
+			FROM
+			  sierra_view.hold,
+			  sierra_view.bib_record_item_record_link,
 			  sierra_view.bib_record_property
-			WHERE 
+			WHERE
 			  sierra_view.hold.id = $1
 					AND sierra_view.hold.is_ir=true
 					AND sierra_view.hold.record_id = bib_record_item_record_link.item_record_id
