@@ -200,34 +200,47 @@ public class Axis360Extractor {
 		headers.put("Content-Type", "application/json");
 		headers.put("Accept", "application/json");
 		//Get a list of titles to process
-		String itemDetailsUrl = setting.getBaseUrl() + "/Services/VendorAPI/titleLicense/v2?modifiedSince=";
+		String baseItemDetailsUrl = setting.getBaseUrl() + "/Services/VendorAPI/titleLicense/v3?modifiedSince=";
 		if (!setting.doFullReload() && (setting.getLastUpdateOfChangedRecords() != 0)){
-			itemDetailsUrl += new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'").format(new Date(setting.getLastUpdateOfChangedRecords() * 1000));
+			baseItemDetailsUrl += new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'").format(new Date(setting.getLastUpdateOfChangedRecords() * 1000));
 		}else{
-			itemDetailsUrl += "2000-01-01T12:00:00Z";
+			baseItemDetailsUrl += "2000-01-01T12:00:00Z";
 		}
 
-		WebServiceResponse response = NetworkUtils.getURL(itemDetailsUrl, logger, headers, 240000);
-		if (!response.isSuccess()) {
-			logEntry.incErrors("Error calling " + itemDetailsUrl + ": " + response.getResponseCode() + " " + response.getMessage());
-		} else {
-			try {
-				JSONObject responseJSON = response.getJSONResponse();
-				JSONObject itemDetailsResponseStatus = responseJSON.getJSONObject("status");
-				if (itemDetailsResponseStatus.getString("Code").equals("0000")){
-					if (responseJSON.has("titles") && !responseJSON.isNull("titles")) {
-						JSONArray titleDetails = responseJSON.getJSONArray("titles");
-						numChanges += processAxis360Titles(setting, existingRecords, titleDetails);
+		int currentPage = 1;
+		int totalPages = 1;
+
+		while (currentPage <= totalPages) {
+			String itemDetailsUrl = baseItemDetailsUrl + "&page=" + currentPage;
+			logger.info("Processing page " + currentPage + " of " + totalPages);
+
+			WebServiceResponse response = NetworkUtils.getURL(itemDetailsUrl, logger, headers, 240000);
+			if (!response.isSuccess()) {
+				logEntry.incErrors("Error calling " + itemDetailsUrl + ": " + response.getResponseCode() + " " + response.getMessage());
+			} else {		
+				try {
+					JSONObject responseJSON = response.getJSONResponse();
+					JSONObject itemDetailsResponseStatus = responseJSON.getJSONObject("status");
+					if (itemDetailsResponseStatus.getString("Code").equals("0000")){
+						JSONObject pagination = responseJSON.getJSONObject("pagination");
+						totalPages = pagination.getInt("totalPage");
+						if (responseJSON.has("titles") && !responseJSON.isNull("titles")) {
+							JSONArray titleDetails = responseJSON.getJSONArray("titles");
+							numChanges += processAxis360Titles(setting, existingRecords, titleDetails);
+						}
+					}else{
+						logEntry.incErrors("Did not get a good status while calling getItemDetails URL: " + itemDetailsUrl + " Status Code: " + itemDetailsResponseStatus.getString("Code") + " Status Message: " + itemDetailsResponseStatus.getString("Message"));
 					}
-				}else{
-					logEntry.incErrors("Did not get a good status while calling getItemDetails " + itemDetailsResponseStatus.getString("Code") + " " + itemDetailsResponseStatus.getString("Message"));
-				}
 
-			} catch (JSONException e) {
-				logger.error("Error parsing response for " + itemDetailsUrl, e);
-				logEntry.addNote("Error parsing response for " + itemDetailsUrl + ": " + e);
+				} catch (JSONException e) {
+					logger.error("Error parsing response for " + itemDetailsUrl, e);
+					logEntry.addNote("Error parsing response for " + itemDetailsUrl + ": " + e);
+				}
 			}
+			currentPage++;
+
 		}
+
 		if (groupedWorkIndexer != null) {
 			groupedWorkIndexer.commitChanges();
 		}
@@ -269,7 +282,7 @@ public class Axis360Extractor {
 						}
 						existingTitle.setProcessed(true);
 					} else {
-						logger.debug("Adding record " + axis360Id);
+//						logger.debug("Adding record " + axis360Id);
 						metadataChanged = true;
 					}
 
@@ -397,7 +410,7 @@ public class Axis360Extractor {
 							updateAxis360AvailabilityStmt.setString(8, itemAvailabilityAsString);
 							updateAxis360AvailabilityStmt.setLong(9, startTimeForLogging);
 							int numAvailabilityUpdates = updateAxis360AvailabilityStmt.executeUpdate();
-							logger.info("Availability changes made " + numAvailabilityUpdates);
+//							logger.info("Availability changes made " + numAvailabilityUpdates);
 						}
 					}
 
@@ -553,7 +566,6 @@ public class Axis360Extractor {
 							JSONObject titleInfo = new JSONObject();
 							titleInfo.put("Availability", availability);
 							titleInfo.put("TitleId", getElementTextContent(titleElement, "titleId"));
-							
 							availabilityResponse.titleInformation = titleInfo;
 						}
 					} else {
