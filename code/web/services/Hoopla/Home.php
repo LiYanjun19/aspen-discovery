@@ -34,7 +34,6 @@ class Hoopla_Home extends GroupedWorkSubRecordHomeAction {
 			//Load status summary
 			$holdingsSummary = $this->recordDriver->getStatusSummary();
 			$interface->assign('holdingsSummary', $holdingsSummary);
-
 			//Get actions
 			$interface->assign('actions', $this->recordDriver->getRecordActions(null, null, $holdingsSummary['available'], true, null));
 

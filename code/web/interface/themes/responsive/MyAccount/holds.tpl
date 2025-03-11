@@ -59,6 +59,14 @@
 				{if $user->isValidForEContentSource('axis360')}
 					<li role="presentation"{if $tab=='axis360'} class="active"{/if}><a href="#axis360" aria-controls="axis360" role="tab" data-toggle="tab">{translate text="Boundless" isPublicFacing=true} <span class="badge"><span class="axis360-holds-placeholder">&nbsp;</span></span></a></li>
 				{/if}
+				{if $user->isValidForEContentSource('hoopla')}
+					<li role="presentation"{if $tab=='hoopla'} class="active"{/if}>
+						<a href="#hoopla" aria-controls="hoopla" role="tab" data-toggle="tab">
+							{translate text="Hoopla" isPublicFacing=true} 
+							<span class="badge"><span class="hoopla-holds-placeholder">&nbsp;</span></span>
+						</a>
+					</li>
+				{/if}
 			</ul>
 			<div class="refresh-indicator small pull-right">
 				{translate text="Last Loaded <span id='accountLoadTime'>%1%</span>" 1=$profile->getFormattedHoldInfoLastLoaded() isPublicFacing=true} <a class="btn btn-default btn-sm" href="#" onclick="return AspenDiscovery.Account.reloadHolds();" title="{translate text="Refresh" isPublicFacing=true}">{translate text="Refresh" isPublicFacing=true inAttribute=true} <i class="fas fa-sync-alt" role="presentation"></i></a>
@@ -85,6 +93,11 @@
 				{if $user->isValidForEContentSource('axis360')}
 					<div role="tabpanel" class="tab-pane{if $tab=='axis360'} active{/if}" id="axis360" aria-label="List of Holds on Boundless Titles"><div id="axis360HoldsPlaceholder">{translate text="Loading holds from Boundless" isPublicFacing=true}</div></div>
 				{/if}
+				{if $user->isValidForEContentSource('hoopla')}
+					<div role="tabpanel" class="tab-pane{if $tab=='hoopla'} active{/if}" id="hoopla" aria-label="List of Holds on Hoopla Titles">
+						<div id="hooplaHoldsPlaceholder">{translate text="Loading holds from Hoopla" isPublicFacing=true}</div>
+					</div>
+				{/if}
 			</div>
 			<script type="text/javascript">
 				{literal}
@@ -109,6 +122,9 @@
 					});
 					$("a[href='#axis360']").on('show.bs.tab', function (e) {
 						AspenDiscovery.Account.loadHolds('axis360');
+					});
+					$("a[href='#hoopla']").on('show.bs.tab', function (e) {
+						AspenDiscovery.Account.loadHolds('hoopla');
 					});
 					{/literal}
 					AspenDiscovery.Account.loadHolds('{$tab}');

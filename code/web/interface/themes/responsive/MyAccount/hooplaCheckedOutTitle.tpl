@@ -98,7 +98,7 @@
 								{if $record->numCheckoutsRemaining == 1}
 									{translate text="You can borrow 1 more Hoopla title this month." isPublicFacing=true}
 								{else}
-									{translate text="You can borrow %1% more Hoopla titles this month." 1=$record->numCheckoutsRemaining isPublicFacing=true}
+									{translate text="You can borrow %1% more Hoopla instant titles this month." 1=$record->numCheckoutsRemaining isPublicFacing=true}
 								{/if}
 							</div>
 						</div>

@@ -781,6 +781,13 @@ class MyAccount_AJAX extends JSON_Action {
 							if (!empty($tmpResult['success'])) {
 								$success++;
 							}
+						} elseif ($holdType == 'hoopla') {
+							require_once ROOT_DIR . '/Drivers/HooplaDriver.php';
+							$driver = new HooplaDriver();
+							$tmpResult = $driver->cancelHold($user, $recordId);
+							if (!empty($tmpResult['success'])) {
+								$success++;
+							}
 						}
 
 						$message = '<div class="alert alert-success">' . translate([
@@ -921,6 +928,13 @@ class MyAccount_AJAX extends JSON_Action {
 					} elseif ($holdType == 'cloud_library') {
 						require_once ROOT_DIR . '/Drivers/CloudLibraryDriver.php';
 						$driver = new CloudLibraryDriver();
+						$tmpResult = $driver->cancelHold($user, $recordId);
+						if ($tmpResult['success']) {
+							$success++;
+						}
+					} elseif ($holdType == 'hoopla') {
+						require_once ROOT_DIR . '/Drivers/HooplaDriver.php';
+						$driver = new HooplaDriver();
 						$tmpResult = $driver->cancelHold($user, $recordId);
 						if ($tmpResult['success']) {
 							$success++;
@@ -2781,6 +2795,8 @@ class MyAccount_AJAX extends JSON_Action {
 						if ($linkedUserSummary != false) {
 							$hooplaSummary->numCheckedOut += $linkedUserSummary->numCheckedOut;
 							$hooplaSummary->numCheckoutsRemaining += $linkedUserSummary->numCheckoutsRemaining;
+							$hooplaSummary->numUnavailableHolds += $linkedUserSummary->numUnavailableHolds;
+							$hooplaSummary->numAvailableHolds += $linkedUserSummary->numAvailableHolds;
 						}
 					}
 				}

@@ -203,6 +203,8 @@ class Grouping_StatusInformation {
 	}
 
 	function addAvailableCopies(int $numCopies): void {
+		global $logger;
+		$logger->log("numcopies: " . $numCopies, Logger::LOG_ERROR);
 		$this->_availableCopies += $numCopies;
 	}
 

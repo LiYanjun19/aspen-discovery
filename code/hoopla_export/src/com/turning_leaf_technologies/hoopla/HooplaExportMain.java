@@ -258,7 +258,7 @@ public class HooplaExportMain {
 			while (getRecordsToReloadRS.next()){
 				long recordToReloadId = getRecordsToReloadRS.getLong("id");
 				String recordId = getRecordsToReloadRS.getString("identifier");
-				long hooplaId = Long.parseLong( StringUtils.replace(recordId,"MWT", ""));
+				long hooplaId = Long.parseLong(StringUtils.replace(recordId,"MWT", ""));
 				//Regroup the record
 				getItemDetailsForRecordStmt.setLong(1, hooplaId);
 				ResultSet getItemDetailsForRecordRS = getItemDetailsForRecordStmt.executeQuery();
@@ -266,6 +266,8 @@ public class HooplaExportMain {
 					String rawResponse = getItemDetailsForRecordRS.getString("rawResponse");
 					String type = getItemDetailsForRecordRS.getString("type");
 					try {
+						//JSONArray itemsArray = new JSONArray(rawResponse);
+					//	JSONObject itemDetails = itemsArray.getJSONObject(0);
 						JSONObject itemDetails = new JSONObject(rawResponse);
 						String groupedWorkId =  getRecordGroupingProcessor().groupHooplaRecord(itemDetails, hooplaId);
 						//Reindex the record
@@ -273,7 +275,7 @@ public class HooplaExportMain {
 
 						if (type != null && type.equals("FLEX")){
 							numFlexRecords++;
-							updateFlexAvailability(hooplaId, itemDetails);
+						//	updateFlexAvailability(hooplaId, itemDetails);
 						} else {
 							numInstantRecords++;
 						}
@@ -303,12 +305,12 @@ public class HooplaExportMain {
 			logEntry.incErrors("Error processing records to reload ", e);
 		}
 	}
-
+/* 
 	private static void updateFlexAvailability(long hooplaId, JSONObject itemDetails) {
 		try {
 			JSONObject availability = itemDetails.getJSONObject("availability");
 			PreparedStatement updateFlexAvailabilityStmt = aspenConn.prepareStatement(
-				"INSERT INTO hoopla_flex_availability (contentId, holdsQueueSize, " +
+				"INSERT INTO hoopla_flex_availability (hooplaId, holdsQueueSize, " +
 				"availableCopies, totalCopies, status) " +
 				"VALUES (?, ?, ?, ?, ?) " +
 				"ON DUPLICATE KEY UPDATE " +
@@ -317,9 +319,11 @@ public class HooplaExportMain {
 				"totalCopies = VALUES(totalCopies), " +
 				"status = VALUES(status)"
         	);
+
+			int holdsQueueSize = availability.has("holdsQueueSize") ? availability.getInt("holdsQueueSize") : 0;
 			
 			updateFlexAvailabilityStmt.setLong(1, hooplaId);
-			updateFlexAvailabilityStmt.setInt(2, availability.getInt("holdsQueueSize"));
+			updateFlexAvailabilityStmt.setInt(2, holdsQueueSize);
 			updateFlexAvailabilityStmt.setInt(3, availability.getInt("availableCopies"));
 			updateFlexAvailabilityStmt.setInt(4, availability.getInt("totalCopies"));
 			updateFlexAvailabilityStmt.setString(5, availability.getString("status"));
@@ -332,7 +336,7 @@ public class HooplaExportMain {
 			logEntry.incErrors("Error updating FLEX availability for record " + hooplaId, e);
 		}
 	}
-
+*/
 	private static void deleteItems(String type) {
 		int numDeleted = 0;
 		try {
@@ -343,7 +347,7 @@ public class HooplaExportMain {
 					RemoveRecordFromWorkResult result = getRecordGroupingProcessor().removeRecordFromGroupedWork("hoopla", Long.toString(hooplaTitle.getHooplaId()));
 
 					if (type.equals("FLEX")){
-						PreparedStatement deleteFlexAvailabilityStmt = aspenConn.prepareStatement("DELETE from hoopla_flex_availability where contentId = ?");
+						PreparedStatement deleteFlexAvailabilityStmt = aspenConn.prepareStatement("DELETE from hoopla_flex_availability where hooplaId = ?");
 						deleteFlexAvailabilityStmt.setLong(1, hooplaTitle.getHooplaId());
 						deleteFlexAvailabilityStmt.executeUpdate();
 					}
@@ -440,7 +444,7 @@ public class HooplaExportMain {
 					long lastUpdateOfChangedRecordsInstant = getSettingsRS.getLong("lastUpdateOfChangedRecordsInstant");
 					long lastUpdateOfAllRecordsInstant = getSettingsRS.getLong("lastUpdateOfAllRecordsInstant");
 
-					boolean instantUpdated = exportHooplaContent(settingsId, doFullReloadInstant, indexByDay, lastUpdateOfChangedRecordsInstant, lastUpdateOfAllRecordsInstant, hooplaAPIBaseURL, hooplaLibraryId, accessToken, "INSTANT", apiUsername, apiPassword);
+					boolean instantUpdated = exportHooplaContent(settingsId, doFullReloadInstant, indexByDay, lastUpdateOfChangedRecordsInstant, lastUpdateOfAllRecordsInstant, hooplaAPIBaseURL, hooplaLibraryId, accessToken, "Instant", apiUsername, apiPassword);
 					updatesRun |= instantUpdated;
 
 				}
@@ -453,12 +457,12 @@ public class HooplaExportMain {
 					long lastUpdateOfChangedRecordsFlex = getSettingsRS.getLong("lastUpdateOfChangedRecordsFlex");
 					long lastUpdateOfAllRecordsFlex = getSettingsRS.getLong("lastUpdateOfAllRecordsFlex");
 
-					boolean flexUpdated = exportHooplaContent(settingsId, doFullReloadFlex, indexByDay, lastUpdateOfChangedRecordsFlex, lastUpdateOfAllRecordsFlex, hooplaAPIBaseURL, hooplaLibraryId, accessToken, "FLEX", apiUsername, apiPassword);
+					boolean flexUpdated = exportHooplaContent(settingsId, doFullReloadFlex, indexByDay, lastUpdateOfChangedRecordsFlex, lastUpdateOfAllRecordsFlex, hooplaAPIBaseURL, hooplaLibraryId, accessToken, "Flex", apiUsername, apiPassword);
 					updatesRun |= flexUpdated;
 
-					if (flexUpdated) {
-						getFlexAvailability(hooplaAPIBaseURL, hooplaLibraryId, accessToken);
-					}
+					//if (flexUpdated) {
+					getFlexAvailability(hooplaAPIBaseURL, hooplaLibraryId, accessToken);
+					//}
 				}
 				if (isRegroupAllRecords) {
 					regroupAllRecords(aspenConn, settingsId, getGroupedWorkIndexer(), logEntry);
@@ -478,7 +482,7 @@ public class HooplaExportMain {
 	private static boolean exportHooplaContent(long settingsId, boolean doFullReload, boolean indexByDay, long lastUpdateOfChangedRecords, long lastUpdateOfAllRecords, String hooplaAPIBaseURL, String hooplaLibraryId, String accessToken, String type, String apiUsername, String apiPassword) {
 		boolean updatedContent = false;
 		long lastUpdate = Math.max(lastUpdateOfChangedRecords, lastUpdateOfAllRecords);
-		String purchaseModel = type.equals("INSTANT") ? "PPU" : "EST";
+		String purchaseModel = type.equals("Instant") ? "PPU" : "EST";
 		try {
 			if (doFullReload){
 				//Unset that a full update needs to be done
@@ -645,9 +649,9 @@ public class HooplaExportMain {
 
 	private static void getFlexAvailability(String hooplaAPIBaseURL, String hooplaLibraryId, String accessToken) {
 		try {
-			PreparedStatement getFlexTitlesStmt = aspenConn.prepareStatement("SELECT t.id, t.hooplaId, fa.holdsQueueSize, fa.availableCopies, fa.totalCopies, fa.status, fa.contentId " +
+			PreparedStatement getFlexTitlesStmt = aspenConn.prepareStatement("SELECT t.id, t.hooplaId, fa.holdsQueueSize, fa.availableCopies, fa.totalCopies, fa.status, fa.hooplaId " +
 			"FROM hoopla_export t " +
-			"LEFT JOIN hoopla_flex_availability fa ON t.hooplaId = fa.contentId " +
+			"LEFT JOIN hoopla_flex_availability fa ON t.hooplaId = fa.hooplaId " +
 			"WHERE t.type = 'FLEX' AND t.active = 1");
 			ResultSet flexTitlesRS = getFlexTitlesStmt.executeQuery();
 
@@ -655,11 +659,12 @@ public class HooplaExportMain {
 			while (flexTitlesRS.next()) {
 				long hooplaId = flexTitlesRS.getLong("hooplaId");
 				hooplaIds.add(hooplaId);
-				Integer existingHoldsQueueSize = flexTitlesRS.getInt("holdsQueueSize");
-				Integer existingAvailableCopies = flexTitlesRS.getInt("availableCopies");
-				Integer existingTotalCopies = flexTitlesRS.getInt("totalCopies");
-				String existingStatus = flexTitlesRS.getString("status");
-				Long existingTitleId = flexTitlesRS.getLong("contentId");
+				boolean existingInDB = flexTitlesRS.getString("status") != null;
+				Integer existingHoldsQueueSize = existingInDB ? flexTitlesRS.getInt("holdsQueueSize") : 0;
+				Integer existingAvailableCopies = existingInDB ? flexTitlesRS.getInt("availableCopies") : 0;
+				Integer existingTotalCopies = existingInDB ? flexTitlesRS.getInt("totalCopies") : 0;
+				String existingStatus = existingInDB ? flexTitlesRS.getString("status") : null;
+				
 				
 				String url = hooplaAPIBaseURL + "/api/v1/libraries/" + hooplaLibraryId + "/content/info?contentIds=" + hooplaId;
 
@@ -690,13 +695,12 @@ public class HooplaExportMain {
 							int newTotalCopies = availability.getInt("totalCopies");
 							
 
-							boolean needsUpdate = existingTitleId == null || existingHoldsQueueSize != newHoldsQueueSize || existingAvailableCopies != newAvailableCopies || existingTotalCopies != newTotalCopies || 
-							!Objects.equals(existingStatus, newStatus);
+							boolean needsUpdate =  !existingInDB || existingHoldsQueueSize != newHoldsQueueSize || existingAvailableCopies != newAvailableCopies || existingTotalCopies != newTotalCopies || !Objects.equals(existingStatus, newStatus);
 
 							if (needsUpdate) {
 								try {
 									PreparedStatement updateFlexAvailabilityStmt = aspenConn.prepareStatement(
-									"INSERT INTO hoopla_flex_availability (contentId, holdsQueueSize, " +
+									"INSERT INTO hoopla_flex_availability (hooplaId, holdsQueueSize, " +
 									"availableCopies, totalCopies, status) " +
 									"VALUES (?, ?, ?, ?, ?) " +
 									"ON DUPLICATE KEY UPDATE " +
@@ -747,10 +751,13 @@ public class HooplaExportMain {
 					logEntry.incErrors("Could not load access token");
 					return;
 				}
-
 				String url = hooplaAPIBaseURL + "/api/v1/libraries/" + hooplaLibraryId + "/content";
 				long numericSingleWorkId = Long.parseLong(singleWorkId);
-				url += "?limit=1&startToken=" + (numericSingleWorkId - 1);
+				if (singleWorkType.equals("FLEX")) {
+					url += "?limit=1&startToken=" + (numericSingleWorkId - 1) + "&purchaseModel=EST";
+				} else {
+					url += "?limit=1&startToken=" + (numericSingleWorkId - 1) + "&purchaseModel=PPU";
+				}
 				HashMap<String, String> headers = new HashMap<>();
 				headers.put("Authorization", "Bearer " + accessToken);
 				headers.put("Content-Type", "application/json");
@@ -772,7 +779,7 @@ public class HooplaExportMain {
 									JSONObject titleObj = responseTitles.getJSONObject(0);
 									boolean isActive = titleObj.getBoolean("active");
 									// ALILILI for testing only 
-									isActive = true;
+								//	isActive = true;
 									if (!isActive) {
 										logEntry.addNote("Skipping availability check for inactive FLEX title: " + numericSingleWorkId);
 									} else {
@@ -794,7 +801,7 @@ public class HooplaExportMain {
 
 													// Direct update without comparing old values
 													PreparedStatement updateFlexAvailabilityStmt = aspenConn.prepareStatement(
-														"INSERT INTO hoopla_flex_availability (contentId, holdsQueueSize, " +
+														"INSERT INTO hoopla_flex_availability (hooplaId, holdsQueueSize, " +
 														"availableCopies, totalCopies, status) " +
 														"VALUES (?, ?, ?, ?, ?) " +
 														"ON DUPLICATE KEY UPDATE " +
@@ -803,10 +810,10 @@ public class HooplaExportMain {
 														"totalCopies = VALUES(totalCopies), " +
 														"status = VALUES(status)"
 													);
-
+													int holdsQueueSize = availability.has("holdsQueueSize") ? availability.getInt("holdsQueueSize") : 0;
 			
 													updateFlexAvailabilityStmt.setLong(1, numericSingleWorkId);
-													updateFlexAvailabilityStmt.setInt(2, availability.getInt("holdsQueueSize"));
+													updateFlexAvailabilityStmt.setInt(2, holdsQueueSize);
 													updateFlexAvailabilityStmt.setInt(3, availability.getInt("availableCopies"));
 													updateFlexAvailabilityStmt.setInt(4, availability.getInt("totalCopies"));
 													updateFlexAvailabilityStmt.setString(5, availability.getString("status"));
@@ -843,10 +850,14 @@ public class HooplaExportMain {
 				JSONObject curTitle = responseTitles.getJSONObject(i);
 
                 //ALILI ONLY FOR TESTING PURPOSES
-				if (type.equals("FLEX")){
-					curTitle.put("price",0.50);
-					curTitle.put("active",true);
-				}
+	/* 			if (type.equals("FLEX")){
+					if (!curTitle.has("price")) {
+						curTitle.put("price", 0.50); 
+					}
+					if (curTitle.has("active") && !curTitle.getBoolean("active")) {
+						curTitle.put("active", true);
+					}
+				}*/
 
 				String rawResponse = curTitle.toString();
 				checksumCalculator.reset();
@@ -890,7 +901,7 @@ public class HooplaExportMain {
 					if (type.equals("FLEX")) {
 						try {
 							PreparedStatement deleteFlexAvailabilityStmt = aspenConn.prepareStatement(
-								"DELETE from hoopla_flex_availability where contentId = ?"
+								"DELETE from hoopla_flex_availability where hooplaId = ?"
 							);
 							deleteFlexAvailabilityStmt.setLong(1, hooplaId);
 							deleteFlexAvailabilityStmt.executeUpdate();
@@ -911,9 +922,8 @@ public class HooplaExportMain {
 					deleteHooplaItemStmt.executeUpdate();
 				}else {
 					if (existingTitle == null){
-						logger.warn("we are here in exitingtitle");
 						addHooplaTitleToDB.setLong(1, hooplaId);
-						addHooplaTitleToDB.setBoolean(2, curTitle.getBoolean("active"));
+						addHooplaTitleToDB.setBoolean(2, true);
 						addHooplaTitleToDB.setString(3, curTitle.getString("title"));
 						addHooplaTitleToDB.setString(4, curTitle.getString("kind"));
 						addHooplaTitleToDB.setBoolean(5, curTitle.getBoolean("pa"));
@@ -922,7 +932,11 @@ public class HooplaExportMain {
 						addHooplaTitleToDB.setString(8, curTitle.has("rating") ? curTitle.getString("rating") : "");
 						addHooplaTitleToDB.setBoolean(9, curTitle.getBoolean("abridged"));
 						addHooplaTitleToDB.setBoolean(10, curTitle.getBoolean("children"));
-						addHooplaTitleToDB.setDouble(11, curTitle.getDouble("price"));
+						if (type.equals("Flex")) {
+							addHooplaTitleToDB.setDouble(11, 0.0);
+						} else {
+							addHooplaTitleToDB.setDouble(11, curTitle.getDouble("price"));
+						}
 						addHooplaTitleToDB.setLong(12, rawChecksum);
 						addHooplaTitleToDB.setString(13, rawResponse);
 						addHooplaTitleToDB.setLong(14, startTimeForLogging);
@@ -939,7 +953,7 @@ public class HooplaExportMain {
 						}
 					}else if (recordUpdated || doFullReload || forceRegrouping){
 						logger.warn("we are here in recordUpdated");
-						updateHooplaTitleInDB.setBoolean(1, curTitle.getBoolean("active"));
+						updateHooplaTitleInDB.setBoolean(1, true);
 						updateHooplaTitleInDB.setString(2, curTitle.getString("title"));
 						updateHooplaTitleInDB.setString(3, curTitle.getString("kind"));
 						updateHooplaTitleInDB.setBoolean(4, curTitle.getBoolean("pa"));
@@ -948,7 +962,11 @@ public class HooplaExportMain {
 						updateHooplaTitleInDB.setString(7, curTitle.has("rating") ? curTitle.getString("rating") : "");
 						updateHooplaTitleInDB.setBoolean(8, curTitle.getBoolean("abridged"));
 						updateHooplaTitleInDB.setBoolean(9, curTitle.getBoolean("children"));
-						updateHooplaTitleInDB.setDouble(10, curTitle.getDouble("price"));
+						if (type.equals("Flex")) {
+							updateHooplaTitleInDB.setDouble(10, 0.0);
+						} else {
+							updateHooplaTitleInDB.setDouble(10, curTitle.getDouble("price"));
+						}
 						updateHooplaTitleInDB.setLong(11, rawChecksum);
 						updateHooplaTitleInDB.setString(12, rawResponse);
 						updateHooplaTitleInDB.setLong(13, existingTitle.getId());
@@ -973,7 +991,13 @@ public class HooplaExportMain {
 	}
 
 	private static void indexRecord(String groupedWorkId) {
-		getGroupedWorkIndexer().processGroupedWork(groupedWorkId);
+		try {
+			
+			getGroupedWorkIndexer().processGroupedWork(groupedWorkId);
+
+		} catch (Exception e) {
+			logger.error("Error indexing grouped work " + groupedWorkId + " by id", e);
+		}
 	}
 
 	private static String getAccessToken(String username, String password) {

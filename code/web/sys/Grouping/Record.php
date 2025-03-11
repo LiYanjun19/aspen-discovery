@@ -156,6 +156,8 @@ class Grouping_Record {
 				} else {
 					$this->_statusInformation->setAvailable(true);
 				}
+				global $logger;
+				$logger->log("numcopies: " . $item->numCopies, Logger::LOG_ERROR);
 				$this->_statusInformation->addAvailableCopies($item->numCopies);
 			}
 		}
