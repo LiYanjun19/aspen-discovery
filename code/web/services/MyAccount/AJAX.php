@@ -781,6 +781,13 @@ class MyAccount_AJAX extends JSON_Action {
 							if (!empty($tmpResult['success'])) {
 								$success++;
 							}
+						} elseif ($holdType == 'hoopla') {
+							require_once ROOT_DIR . '/Drivers/HooplaDriver.php';
+							$driver = new HooplaDriver();
+							$tmpResult = $driver->cancelHold($user, $recordId);
+							if (!empty($tmpResult['success'])) {
+								$success++;
+							}
 						}
 
 						$message = '<div class="alert alert-success">' . translate([
@@ -921,6 +928,13 @@ class MyAccount_AJAX extends JSON_Action {
 					} elseif ($holdType == 'cloud_library') {
 						require_once ROOT_DIR . '/Drivers/CloudLibraryDriver.php';
 						$driver = new CloudLibraryDriver();
+						$tmpResult = $driver->cancelHold($user, $recordId);
+						if ($tmpResult['success']) {
+							$success++;
+						}
+					} elseif ($holdType == 'hoopla') {
+						require_once ROOT_DIR . '/Drivers/HooplaDriver.php';
+						$driver = new HooplaDriver();
 						$tmpResult = $driver->cancelHold($user, $recordId);
 						if ($tmpResult['success']) {
 							$success++;
@@ -2781,6 +2795,8 @@ class MyAccount_AJAX extends JSON_Action {
 						if ($linkedUserSummary != false) {
 							$hooplaSummary->numCheckedOut += $linkedUserSummary->numCheckedOut;
 							$hooplaSummary->numCheckoutsRemaining += $linkedUserSummary->numCheckoutsRemaining;
+							$hooplaSummary->numUnavailableHolds += $linkedUserSummary->numUnavailableHolds;
+							$hooplaSummary->numAvailableHolds += $linkedUserSummary->numAvailableHolds;
 						}
 					}
 				}
@@ -2834,7 +2850,6 @@ class MyAccount_AJAX extends JSON_Action {
 							$overDriveSummary->numUnavailableHolds += $linkedUserSummary->numUnavailableHolds;
 						}
 					}
-					
 					foreach ($user->getLinkedUsers() as $linkedUser) {
 						$linkedUserSummary = $driver->getAccountSummary($linkedUser);
 						$overDriveSummary->numCheckedOut += $linkedUserSummary->numCheckedOut;
@@ -3690,7 +3705,7 @@ class MyAccount_AJAX extends JSON_Action {
 				$filteredHolds['available'][$key] = $hold;
 			}
 		}
-	
+
 		foreach ($allHolds['unavailable'] as $key => $hold) {
 			$hold->recordId = $this->normalizeRecordId($hold->recordId);
 			$matchFound = false;
@@ -3707,7 +3722,6 @@ class MyAccount_AJAX extends JSON_Action {
 	
 		return $filteredHolds;
 	}
-	
 
 	public function filterHolds(array $allHolds, string $selectedUser): array {
 
@@ -3715,10 +3729,8 @@ class MyAccount_AJAX extends JSON_Action {
 			'available' => [],
 			'unavailable' => [],
 		];
-	
 		// Check if we're filtering by a specific user
-		$allUsersSelected = (empty($selectedUser) || $selectedUser === "" || $selectedUser === '[""]');
-	
+		$allUsersSelected = (empty($selectedUser) || $selectedUser === "" | $selectedUser === '[""]');
 		foreach ($allHolds['available'] as $key => $hold) {
 			if ($allUsersSelected || intval($hold->userId) === intval($selectedUser)) {
 				$filteredHolds['available'][$key] = $hold;
@@ -3730,7 +3742,7 @@ class MyAccount_AJAX extends JSON_Action {
 				$filteredHolds['unavailable'][$key] = $hold;
 			}
 		}
-	
+
 		return $filteredHolds;
 	}
 
@@ -3744,7 +3756,7 @@ class MyAccount_AJAX extends JSON_Action {
 			} else {
 				$_SESSION['selectedUser'] = $selectedUser;
 			}
-	
+
 		} elseif (isset($_SESSION['selectedUser'])) {
 			$selectedUser = $_SESSION['selectedUser'];
 		}
@@ -9464,7 +9476,7 @@ class MyAccount_AJAX extends JSON_Action {
 			'success' => true,
 			'numCampaigns' => count($enrolledCampaigns)
 		];
-	}	
+	}
 
 	public function applyCampaignProgress($userId, $campaignId) {
 		require_once ROOT_DIR . '/sys/CommunityEngagement/Campaign.php';
@@ -9539,10 +9551,10 @@ class MyAccount_AJAX extends JSON_Action {
 		require_once ROOT_DIR . '/sys/CommunityEngagement/Milestone.php';
 		require_once ROOT_DIR . '/sys/CommunityEngagement/CampaignMilestoneProgressEntry.php';
 		require_once ROOT_DIR . '/sys/CommunityEngagement/action-hooks.php';
-		
+
 		$campaignMilestone = new CampaignMilestone();
 		$campaignMilestone->campaignId = $campaignId;
-	
+
 		if ($campaignMilestone->find()) {
 			while ($campaignMilestone->fetch()) {
 				$milestone = new Milestone();
