@@ -19,6 +19,7 @@ class HooplaSettings {
 	// Flex settings
 	private final boolean hooplaFlexEnabled;
 	private final boolean runFullUpdateFlex;
+	private final int hooplaFlexBatchSize;
 	private final long lastUpdateOfChangedRecordsFlex;
 	private final long lastUpdateOfAllRecordsFlex;
 
@@ -44,6 +45,7 @@ class HooplaSettings {
 		runFullUpdateFlex = settingsRS.getBoolean("runFullUpdateFlex");
 		lastUpdateOfChangedRecordsFlex = settingsRS.getLong("lastUpdateOfChangedRecordsFlex");
 		lastUpdateOfAllRecordsFlex = settingsRS.getLong("lastUpdateOfAllRecordsFlex");
+		hooplaFlexBatchSize = settingsRS.getInt("hooplaFlexBatchSize");
 
 		accessToken = settingsRS.getString("accessToken");  
 		tokenExpirationTime = settingsRS.getLong("tokenExpirationTime");
@@ -105,6 +107,10 @@ class HooplaSettings {
 		return lastUpdateOfAllRecordsInstant;
 		}
 		return 0;
+	}
+
+	public int getHooplaFlexBatchSize() {
+		return hooplaFlexBatchSize;
 	}
 
 	public String getAccessToken() {

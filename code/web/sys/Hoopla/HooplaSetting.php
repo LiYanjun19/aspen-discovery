@@ -17,6 +17,7 @@ class HooplaSetting extends DataObject {
 	public $hooplaInstantEnabled;
 	public $runFullUpdateFlex;
 	public $lastUpdateOfChangedRecordsFlex;
+	public $hooplaFlexBatchSize;
 	public $lastUpdateOfAllRecordsFlex;
 	public $hooplaFlexEnabled;
 
@@ -120,6 +121,14 @@ class HooplaSetting extends DataObject {
 						'label' => 'Run Full Update for Flex',
 						'description' => 'Whether or not a full update of all records should be done on the next pass of indexing',
 						'default' => 0,
+					],
+					'hooplaFlexBatchSize' => [
+						'property' => 'hooplaFlexBatchSize',
+						'type' => 'integer',
+						'label' => 'Hoopla Flex Batch Size',
+						'note' => 'Please do not put any number larger than 50',
+						'description' => 'The number of records to process per api request for availability updates',
+						'default' => 50,
 					],
 					'lastUpdateOfChangedRecordsFlex' => [
 						'property' => 'lastUpdateOfChangedRecordsFlex',
