@@ -626,7 +626,7 @@ public class HooplaExportMain {
 		// Update all the flex titles availability
 		logEntry.addNote("Starting Flex availability update");
 		logEntry.saveResults();
-		int numUpdates = 0;
+		int numFlexTitlesProcessed = 0;
 		int hooplaFlexBatchSize = settings.getHooplaFlexBatchSize() > 0 ? settings.getHooplaFlexBatchSize() : 50;
 
 		try {
@@ -651,7 +651,7 @@ public class HooplaExportMain {
 				flexBatchIds.add(hooplaId);
 
 				if (flexBatchIds.size() >= hooplaFlexBatchSize) {
-					numUpdates += processBatchForFlex(flexBatchIds, flexBatchRecordsMap, settings);
+					numFlexTitlesProcessed += processBatchForFlex(flexBatchIds, flexBatchRecordsMap, settings);
 					flexBatchIds.clear();
 					flexBatchRecordsMap.clear();
 				}
@@ -661,13 +661,14 @@ public class HooplaExportMain {
 			getFlexTitlesStmt.close();
 
 			if (!flexBatchIds.isEmpty()) {
-				numUpdates += processBatchForFlex(flexBatchIds, flexBatchRecordsMap, settings);
+				numFlexTitlesProcessed += processBatchForFlex(flexBatchIds, flexBatchRecordsMap, settings);
 				flexBatchIds.clear();
 				flexBatchRecordsMap.clear();
 			}
 
-			if (numUpdates > 0) {
-				logEntry.addNote("Updated availability for " + numUpdates + " Flex titles");
+			logEntry.addNote("Processed " + numFlexTitlesProcessed + " Flex titles for availability");
+			if (logEntry.getNumAvailabilityChanges() > 0) {
+				logEntry.addNote("Updated availability for " + logEntry.getNumAvailabilityChanges() + " Flex titles");
 				return true;
 			} else {
 				logEntry.addNote("No availability changes found for Hoopla Flex titles");
@@ -684,7 +685,7 @@ public class HooplaExportMain {
 	}
 
 	private static int processBatchForFlex(List<Long> flexBatchIds, HashMap<Long, HooplaFlexAvailability> flexBatchRecordsMap, HooplaSettings settings) {
-		int numUpdates = 0;
+		int numFlexTitlesProcessed = 0;
 		boolean doFullReloadFlex = settings.isRunFullUpdate("Flex");
 		String hooplaAPIBaseURL = settings.getApiUrl();
 		int hooplaLibraryId = settings.getLibraryId();
@@ -697,7 +698,7 @@ public class HooplaExportMain {
 
 		if (accessToken == null) {
 			logEntry.incErrors("Could not load access token");
-			return numUpdates;
+			return numFlexTitlesProcessed;
 		}
 		try {
 			PreparedStatement updateFlexAvailabilityStmt = aspenConn.prepareStatement("INSERT INTO hoopla_flex_availability (hooplaId, holdsQueueSize, availableCopies, totalCopies, status) " +
@@ -722,7 +723,7 @@ public class HooplaExportMain {
 
 			if (!response.isSuccess()){
 				logEntry.incErrors("Could not get availability: " + response.getResponseCode() + " " + response.getMessage());
-				return numUpdates;
+				return numFlexTitlesProcessed;
 			}
 			try {
 				JSONArray availabilityArray = new JSONArray(response.getMessage());
@@ -743,6 +744,7 @@ public class HooplaExportMain {
 							continue;
 						}
 
+						numFlexTitlesProcessed++;
 						JSONObject availability = titleInfo.getJSONObject("availability");
 						if (availability.length() > 0) {
 							String newStatus = availability.getString("status");
@@ -757,10 +759,6 @@ public class HooplaExportMain {
 							String existingStatus = existingFlexAvailability.getStatus();
 							boolean existingInDB = existingStatus != null;
 
-							if (!doFullReloadFlex && existingInDB){
-								logEntry.incNumProducts(1);
-							}
-
 							boolean needsUpdate =  !existingInDB || existingHoldsQueueSize != newHoldsQueueSize || existingAvailableCopies != newAvailableCopies || existingTotalCopies != newTotalCopies || !Objects.equals(existingStatus, newStatus);
 
 							if (needsUpdate) {
@@ -771,7 +769,6 @@ public class HooplaExportMain {
 									updateFlexAvailabilityStmt.setInt(4, newTotalCopies);
 									updateFlexAvailabilityStmt.setString(5, newStatus);
 									updateFlexAvailabilityStmt.executeUpdate();
-									numUpdates++;
 									logEntry.incAvailabilityChanges();
 
 									String rawResponse = existingFlexAvailability.rawResponse;
@@ -792,7 +789,7 @@ public class HooplaExportMain {
 		} catch (Exception e) {
 			logEntry.incErrors("Error processing batch", e);
 		}
-		return numUpdates;
+		return numFlexTitlesProcessed;
 	}
 
 

@@ -169,6 +169,10 @@ class HooplaExtractLogEntry implements BaseIndexingLogEntry {
 		numAvailabilityChanges++;
 	}
 
+	public int getNumAvailabilityChanges() {
+		return numAvailabilityChanges;
+	}
+
 	public void incChangedAfterGrouping(){
 		numChangedAfterGrouping++;
 	}
