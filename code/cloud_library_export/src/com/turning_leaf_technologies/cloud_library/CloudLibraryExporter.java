@@ -143,48 +143,64 @@ public class CloudLibraryExporter {
 
 		//Handle events to determine status changes when the bibs don't change.
 		if (!settings.isDoFullReload()) {
-			//noinspection SpellCheckingInspection
-			String eventsApiPath = "/cirrus/library/" + settings.getLibraryId() + "/data/cloudevents?startdate=" + startDate;
 			CloudLibraryEventHandler eventHandler = new CloudLibraryEventHandler(this, settings.isDoFullReload(), startTimeForLogging, aspenConn, getRecordGroupingProcessor(), getGroupedWorkIndexer(), logEntry, logger);
-			//noinspection ConstantConditions
-			for (int curTry = 1; curTry <= 4; curTry++) {
-				WebServiceResponse response = callCloudLibrary(eventsApiPath);
-				if (response == null) {
-					//Something bad happened, we're done.
-					return numChanges;
-				} else if (!response.isSuccess()) {
-					if (response.getResponseCode() != 502) {
-						logEntry.incErrors("Error " + response.getResponseCode() + " calling " + eventsApiPath + ": " + response.getMessage());
-						break;
-					} else {
-						if (curTry == 4) {
+
+			String currentStartDate = startDate;
+
+			while (true) {
+				String eventsApiPath = "/cirrus/library/" + settings.getLibraryId() + "/data/cloudevents?startdate=" + currentStartDate;
+
+				logger.warn("url ----> " + eventsApiPath);
+
+				for (int curTry = 1; curTry <= 4; curTry++) {
+					WebServiceResponse response = callCloudLibrary(eventsApiPath);
+					if (response == null) {
+						// Something bad happened, we're done.
+						return numChanges;
+					} else if (!response.isSuccess()) {
+						if (response.getResponseCode() != 502) {
 							logEntry.incErrors("Error " + response.getResponseCode() + " calling " + eventsApiPath + ": " + response.getMessage());
 							break;
 						} else {
-							try {
-								Thread.sleep(1000);
-							} catch (InterruptedException e) {
-								logger.error("Thread was interrupted while waiting to retry for cloudLibrary");
+							if (curTry == 4) {
+								logEntry.incErrors("Error " + response.getResponseCode() + " calling " + eventsApiPath + ": " + response.getMessage());
+								break;
+							} else {
+								try {
+									Thread.sleep(1000);
+								} catch (InterruptedException e) {
+									logger.error("Thread was interrupted while waiting to retry for cloudLibrary");
+								}
 							}
 						}
-					}
-				} else {
-					try {
-						SAXParserFactory saxParserFactory = SAXParserFactory.newInstance();
-						SAXParser saxParser = saxParserFactory.newSAXParser();
-						saxParser.parse(new ByteArrayInputStream(response.getMessage().getBytes(StandardCharsets.UTF_8)), eventHandler);
+					} else {
+						try {
+							SAXParserFactory saxParserFactory = SAXParserFactory.newInstance();
+							SAXParser saxParser = saxParserFactory.newSAXParser();
+							saxParser.parse(new ByteArrayInputStream(response.getMessage().getBytes(StandardCharsets.UTF_8)),eventHandler);
 
-						if (handler.getNumDocuments() > 0) {
-							numChanges += handler.getNumDocuments();
+							if (handler.getNumDocuments() > 0) {
+								numChanges += handler.getNumDocuments();
+							}
+							logEntry.saveResults();
+						} catch (SAXException | ParserConfigurationException | IOException e) {
+							logger.error("Error parsing response", e);
+							logEntry.addNote("Error parsing response: " + e);
 						}
-						logEntry.saveResults();
-					} catch (SAXException | ParserConfigurationException | IOException e) {
-						logger.error("Error parsing response", e);
-						logEntry.addNote("Error parsing response: " + e);
+						break;
 					}
+				}
+
+				String lastEventDateTime = eventHandler.getLastEventDateTimeInUTC();
+				if (lastEventDateTime != null && !lastEventDateTime.isEmpty() && !lastEventDateTime.equals(currentStartDate)) {
+					currentStartDate = lastEventDateTime;
+					logger.warn("Found LastEventDateTimeInUTC: " + lastEventDateTime + ", continuing to next page");
+				} else {
+					logger.warn("No more events available (LastEventDateTimeInUTC is null/empty), pagination complete");
 					break;
 				}
 			}
+			logger.warn("Events processing completed");
 		}
 
 		if (settings.isDoFullReload() && !logEntry.hasErrors()) {

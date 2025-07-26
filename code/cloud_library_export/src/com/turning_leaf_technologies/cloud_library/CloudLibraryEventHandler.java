@@ -1,6 +1,7 @@
 package com.turning_leaf_technologies.cloud_library;
 
 import org.aspen_discovery.grouping.RecordGroupingProcessor;
+import org.aspen_discovery.grouping.RemoveRecordFromWorkResult;
 import org.aspen_discovery.reindexer.GroupedWorkIndexer;
 import org.apache.logging.log4j.Logger;
 import org.xml.sax.helpers.DefaultHandler;
@@ -15,6 +16,9 @@ class CloudLibraryEventHandler extends DefaultHandler {
 	private final CloudLibraryExporter exporter;
 	private PreparedStatement updateCloudLibraryAvailabilityStmt;
 	private PreparedStatement getExistingCloudLibraryAvailabilityStmt;
+	private PreparedStatement deleteCloudLibraryAvailabilityStmt;
+	private PreparedStatement cloudLibraryTitleHasAvailabilityStmt;
+	private PreparedStatement deleteCloudLibraryItemStmt;
 
 	private final boolean doFullReload;
 	private final RecordGroupingProcessor recordGroupingProcessor;
@@ -23,6 +27,10 @@ class CloudLibraryEventHandler extends DefaultHandler {
 	private final CloudLibraryExtractLogEntry logEntry;
 	private final long startTimeForLogging;
 	private String nodeContents = "";
+
+	private String currentItemId = "";
+	private String currentEventType = "";
+	private String lastEventDateTimeInUTC = "";
 
 	private static final CRC32 checksumCalculator = new CRC32();
 
@@ -44,6 +52,10 @@ class CloudLibraryEventHandler extends DefaultHandler {
 							"ON DUPLICATE KEY UPDATE totalCopies = VALUES(totalCopies), sharedCopies = VALUES(sharedCopies), " +
 							"totalLoanCopies = VALUES(totalLoanCopies), totalHoldCopies = VALUES(totalHoldCopies), sharedLoanCopies = VALUES(sharedLoanCopies), " +
 							"rawChecksum = VALUES(rawChecksum), rawResponse = VALUES(rawResponse), lastChange = VALUES(lastChange)");
+
+			deleteCloudLibraryAvailabilityStmt = aspenConn.prepareStatement("DELETE FROM cloud_library_availability where cloudLibraryId = ? and settingId = ?");
+			cloudLibraryTitleHasAvailabilityStmt = aspenConn.prepareStatement("SELECT count(*) as numAvailability FROM cloud_library_availability where cloudLibraryId = ?");
+			deleteCloudLibraryItemStmt = aspenConn.prepareStatement("UPDATE cloud_library_title SET deleted = 1 where cloudLibraryId = ?");
 		} catch (Exception e) {
 			logger.error("Error connecting to aspen database", e);
 			System.exit(1);
@@ -55,10 +67,102 @@ class CloudLibraryEventHandler extends DefaultHandler {
 	}
 
 	public void endElement(String uri, String localName, String qName) {
-		if (qName.equals("ItemId")){
-			updateAvailabilityForTitle(nodeContents.trim());
+		switch (qName) {
+			case "ItemId":
+				currentItemId = nodeContents.trim();
+				break;
+			case "EventType":
+				currentEventType = nodeContents.trim();
+				break;
+			case "CloudLibraryEvent":
+				// Process the complete event when we reach the end of the event element
+				processCloudLibraryEvent(currentItemId, currentEventType);
+				// Reset for next event
+				currentItemId = "";
+				currentEventType = "";
+				break;
+			case "LastEventDateTimeInUTC":
+				if (nodeContents != null && !nodeContents.trim().isEmpty()) {
+					lastEventDateTimeInUTC = nodeContents.trim();
+					logger.warn("LastEventDateTimeInUTC: " + lastEventDateTimeInUTC);
+				} else {
+					lastEventDateTimeInUTC = null;
+					logger.warn("LastEventDateTimeInUTC is empty, no more events");
+				}
+				break;
 		}
 		nodeContents = "";
+	}
+
+	public String getLastEventDateTimeInUTC() {
+		return lastEventDateTimeInUTC;
+	}
+
+	private void processCloudLibraryEvent(String cloudLibraryId, String eventType) {
+		if (cloudLibraryId.isEmpty()) {
+			logger.warn("Skipping event with empty LibraryId");
+			return;
+		}
+		if ("REMOVED".equals(eventType)) {
+			// Delete expired titles
+			deleteExpiredTitle(cloudLibraryId);
+		} else {
+			updateAvailabilityForTitle(cloudLibraryId);
+		}
+	}
+
+	private void deleteExpiredTitle(String cloudLibraryId) {
+		logger.warn("Processing REMOVED event for expired title: " + cloudLibraryId);
+		try {
+			deleteCloudLibraryAvailabilityStmt.setString(1, cloudLibraryId);
+			deleteCloudLibraryAvailabilityStmt.setLong(2, exporter.getSettingsId());
+			int deletedRows = deleteCloudLibraryAvailabilityStmt.executeUpdate();
+
+			deleteCloudLibraryAvailabilityStmt.close();
+
+			if (deletedRows > 0) {
+				logEntry.incAvailabilityChanges();
+				logger.warn("Removed availability for expired title " + cloudLibraryId + " from setting " + exporter.getSettingsId());
+
+				cloudLibraryTitleHasAvailabilityStmt.setString(1, cloudLibraryId);
+				ResultSet cloudLibraryTitleHasAvailabilityRS = cloudLibraryTitleHasAvailabilityStmt.executeQuery();
+				boolean shouldDeleteTitle = true;
+				if (cloudLibraryTitleHasAvailabilityRS.next()) {
+					int remainingAvailability = cloudLibraryTitleHasAvailabilityRS.getInt("numAvailability");
+					if (remainingAvailability > 0) {
+						shouldDeleteTitle = false;
+						logger.warn("Title " + cloudLibraryId + " still available in " + remainingAvailability + " other setting(s)");
+					}
+				}
+
+				if (shouldDeleteTitle) {
+					deleteCloudLibraryItemStmt.setString(1, cloudLibraryId);
+					deleteCloudLibraryItemStmt.executeUpdate();
+					logEntry.incDeleted();
+					logger.info("Marked title " + cloudLibraryId + " as deleted - expired from all collections");
+					RemoveRecordFromWorkResult result = recordGroupingProcessor.removeRecordFromGroupedWork("cloud_library", cloudLibraryId);
+					if (result.reindexWork) {
+						indexer.processGroupedWork(result.permanentId);
+						logger.warn("Reindexed grouped work " + result.permanentId + " after title expiration");
+					} else if (result.deleteWork) {
+						indexer.deleteRecord(result.permanentId, result.groupedWorkId);
+						logger.warn("Deleted grouped work " + result.permanentId + " - no remaining records");
+					}
+				} else {
+					String groupedWorkId = recordGroupingProcessor.getPermanentIdForRecord("cloud_library", cloudLibraryId);
+					if (groupedWorkId != null) {
+						indexer.processGroupedWork(groupedWorkId);
+						logger.warn("Updated grouped work " + groupedWorkId + " to reflect availability change");
+					}
+				}
+				cloudLibraryTitleHasAvailabilityStmt.close();
+				deleteCloudLibraryItemStmt.close();
+			} else {
+				logger.warn("No availability record found to delete for " + cloudLibraryId + " in setting " + exporter.getSettingsId());
+			}
+		} catch (SQLException e) {
+			logEntry.incErrors("Error processing REMOVED event for title " + cloudLibraryId, e);
+		}
 	}
 
 	private void updateAvailabilityForTitle(String cloudLibraryId) {
