@@ -4811,6 +4811,8 @@ class Library extends DataObject {
 			return $this->getLibraryOverDriveScopes();
 		} elseif ($name == 'overDriveSettings') {
 			return $this->getLibraryOverDriveSettings();
+		} elseif ($name == 'hooplaSettings') {
+			return $this->getLibraryHooplaSettings();
 		} elseif ($name == 'materialsRequestFieldsToDisplay') {
 			return $this->getMaterialsRequestFieldsToDisplay();
 		} elseif ($name == 'materialsRequestFormats') {
@@ -4843,6 +4845,8 @@ class Library extends DataObject {
 			$this->_libraryOverDriveScopes = $value;
 		}elseif ($name == 'overDriveSettings') {
 			$this->_libraryOverDriveSettings = $value;
+		} elseif ($name == 'hooplaSettings') {
+			$this->_libraryHooplaSettings = $value;
 		} elseif ($name == 'materialsRequestFieldsToDisplay') {
 			$this->_materialsRequestFieldsToDisplay = $value;
 		} elseif ($name == 'materialsRequestFormats') {
@@ -4901,6 +4905,7 @@ class Library extends DataObject {
 			$this->saveSideLoadScopes();
 			$this->saveOverDriveScopes();
 			$this->saveOverDriveSettings();
+			$this->saveHooplaSettings();
 			$this->saveMaterialsRequestFieldsToDisplay();
 			$this->saveMaterialsRequestFormFields();
 			$this->saveLibraryLinks();
@@ -4974,6 +4979,7 @@ class Library extends DataObject {
 			$this->saveSideLoadScopes();
 			$this->saveOverDriveScopes();
 			$this->saveOverDriveSettings();
+			$this->saveHooplaSettings();
 			$this->saveMaterialsRequestFieldsToDisplay();
 			$this->saveMaterialsRequestFormats();
 			$this->saveMaterialsRequestFormFields();
@@ -5795,6 +5801,32 @@ class Library extends DataObject {
 		if (isset ($this->_libraryOverDriveSettings) && is_array($this->_libraryOverDriveSettings)) {
 			$this->saveOneToManyOptions($this->_libraryOverDriveSettings, 'libraryId');
 			unset($this->_libraryOverDriveSettings);
+		}
+	}
+
+	private $_libraryHooplaSettings = null;
+
+	public function getLibraryHooplaSettings() : array {
+		if ($this->_libraryHooplaSettings == null) {
+			$this->_libraryHooplaSettings = [];
+			if ($this->libraryId > 0) {
+				try {
+					require_once ROOT_DIR . '/sys/Hoopla/LibraryHooplaSettings.php';
+					$libraryHooplaSetting = new LibraryHooplaSettings();
+					$libraryHooplaSetting->libraryId = $this->libraryId;
+					$libraryHooplaSetting->orderBy('weight');
+					$this->_libraryHooplaSettings = $libraryHooplaSetting->fetchAll(null, null, false, true);
+				}catch (Exception) {
+				}
+			}
+		}
+		return $this->_libraryHooplaSettings;
+	}
+
+	public function saveHooplaSettings() : void {
+		if (isset ($this->_libraryHooplaSettings) && is_array($this->_libraryHooplaSettings)) {
+			$this->saveOneToManyOptions($this->_libraryHooplaSettings, 'libraryId');
+			unset($this->_libraryHooplaSettings);
 		}
 	}
 
