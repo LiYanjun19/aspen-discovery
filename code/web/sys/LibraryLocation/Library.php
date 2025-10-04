@@ -831,8 +831,8 @@ class Library extends DataObject {
 			$hooplaScopes[$hooplaScope->id] = $hooplaScope->name;
 		}
 
-		require_once ROOT_DIR . '/sys/Hoopla/LibraryHooplaSettings.php';
-		$libraryHooplaSettingsStructure = LibraryHooplaSettings::getObjectStructure($context);
+		require_once ROOT_DIR . '/sys/Hoopla/LibraryHooplaSetting.php';
+		$libraryHooplaSettingsStructure = LibraryHooplaSetting::getObjectStructure($context);
 		unset($libraryHooplaSettingsStructure['libraryId']);
 		unset($libraryHooplaSettingsStructure['weight']);
 
@@ -4089,7 +4089,7 @@ class Library extends DataObject {
 						'description' => "Additional Settings information for Hoopla",
 						'keyThis' => 'libraryId',
 						'keyOther' => 'libraryId',
-						'subObjectType' => 'LibraryHooplaSettings',
+						'subObjectType' => 'LibraryHooplaSetting',
 						'structure' => $libraryHooplaSettingsStructure,
 						'sortable' => true,
 						'storeDb' => true,
@@ -5811,8 +5811,8 @@ class Library extends DataObject {
 			$this->_libraryHooplaSettings = [];
 			if ($this->libraryId > 0) {
 				try {
-					require_once ROOT_DIR . '/sys/Hoopla/LibraryHooplaSettings.php';
-					$libraryHooplaSetting = new LibraryHooplaSettings();
+					require_once ROOT_DIR . '/sys/Hoopla/LibraryHooplaSetting.php';
+					$libraryHooplaSetting = new LibraryHooplaSetting();
 					$libraryHooplaSetting->libraryId = $this->libraryId;
 					$libraryHooplaSetting->orderBy('weight');
 					$this->_libraryHooplaSettings = $libraryHooplaSetting->fetchAll(null, null, false, true);
