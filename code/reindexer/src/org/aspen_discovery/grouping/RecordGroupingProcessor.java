@@ -1048,7 +1048,7 @@ public class RecordGroupingProcessor {
 		}else{
 			subTitle = "";
 		}
-		String mediaType = itemDetails.getString("format");
+		String mediaType = itemDetails.optString("format", itemDetails.optString("kind", ""));
 		String primaryFormat;
 		switch (mediaType) {
 			case "MOVIE":
