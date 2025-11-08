@@ -3,10 +3,12 @@ require_once ROOT_DIR . '/sys/SearchObject/SolrSearcher.php';
 require_once ROOT_DIR . '/RecordDrivers/RecordDriverFactory.php';
 
 abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_SolrSearcher {
-	protected $searchSubType;
-	protected $searchVersion;
+	protected ?string $searchSubType;
+	protected int $searchVersion;
 
-	public $selectedAvailabilityToggleValue;
+	public ?string $selectedAvailabilityToggleValue;
+
+	private bool $automaticFacetsApplied = false;
 
 	/**
 	 * This determines if Aspen applies the default availability toggle for the library
@@ -17,7 +19,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 */
 	protected bool $disableDefaultAvailabilityToggle = false;
 
-	public function __construct($searchVersion) {
+	public function __construct(int $searchVersion) {
 		parent::__construct();
 		$this->searchVersion = $searchVersion;
 	}
@@ -26,6 +28,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 		$this->indexEngine->disableScoping();
 	}
 
+	/** @noinspection PhpUnused */
 	public function enableScoping() : void {
 		$this->indexEngine->enableScoping();
 	}
@@ -34,6 +37,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 		$this->indexEngine->disableBoosting();
 	}
 
+	/** @noinspection PhpUnused */
 	public function enableBoosting() : void {
 		$this->indexEngine->enableBoosting();
 	}
@@ -65,9 +69,10 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 *
 	 * @param String|null $searchSource
 	 * @param String|null $searchTerm
+	 * @param ?bool $enableSearchInterpreter
 	 * @return  boolean
 	 */
-	public function init($searchSource = null, $searchTerm = null) {
+	public function init(?string $searchSource = null, ?string $searchTerm = null, ?bool $enableSearchInterpreter = false) : bool {
 		// Call the standard initialization routine in the parent:
 		parent::init($searchSource);
 
@@ -92,7 +97,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 		$this->initFilters();
 
 		if ($searchTerm == null) {
-			$searchTerm = isset($_REQUEST['lookfor']) ? $_REQUEST['lookfor'] : null;
+			$searchTerm = $_REQUEST['lookfor'] ?? null;
 		}
 
 		global $module;
@@ -100,7 +105,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 
 		//********************
 		// Basic Search logic
-		if ($this->initBasicSearch($searchTerm)) {
+		if ($this->initBasicSearch($searchTerm, $enableSearchInterpreter)) {
 			// If we found a basic search, we don't need to do anything further.
 		} else {
 			$this->initAdvancedSearch();
@@ -178,13 +183,117 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	} // End init()
 
 	/**
+	 * Initialize the object's search settings for a basic search found in the
+	 * $_REQUEST super global.
+	 *
+	 * @access  public
+	 * @param null|String|String[] $searchTerm
+	 * @param bool $enableSearchInterpreter
+	 * @return  boolean  True if search settings were found, false if not.
+	 */
+	public function initBasicSearch(mixed $searchTerm = null, bool $enableSearchInterpreter = false) : bool{
+		require_once ROOT_DIR . '/sys/Utils/StringUtils.php';
+		if ($searchTerm == null) {
+			// If no lookfor parameter was found, we have no search terms to
+			// add to our array!
+			if (!isset($_REQUEST['lookfor'])) {
+				return false;
+			} else {
+				$searchTerm = StringUtils::removeTrailingPunctuation(trim($_REQUEST['lookfor']));
+			}
+		} else {
+			$searchTerm = StringUtils::removeTrailingPunctuation(trim($searchTerm));
+		}
+
+		// If no type defined use default
+		if ((isset($_REQUEST['searchIndex'])) && ($_REQUEST['searchIndex'] != '')) {
+			$type = $_REQUEST['searchIndex'];
+
+			// Flatten type arrays for backward compatibility:
+			if (is_array($type)) {
+				$type = strip_tags($type[0]);
+			} else {
+				$type = strip_tags($type);
+			}
+
+			//The type should never have punctuation in it (quotes, colons, etc.)
+			$type = preg_replace('/[:"\']/', '', $type);
+
+			if (!array_key_exists($type, $this->getSearchIndexes()) && !array_key_exists($type, $this->advancedTypes)) {
+				$type = $this->getDefaultIndex();
+			}
+		} else {
+			$type = $this->getDefaultIndex();
+		}
+
+		if (strpos($searchTerm, ':') > 0) {
+			$tempSearchInfo = explode(':', $searchTerm);
+			if (count($tempSearchInfo) == 2) {
+				//Check for leading and trailing parentheses
+				if (strlen($tempSearchInfo[0]) > 0 && $tempSearchInfo[0][0] == '(') {
+					$tempSearchInfo[0] = substr($tempSearchInfo[0], 1);
+				}
+				if (strlen($tempSearchInfo[1]) > 0 && $tempSearchInfo[1][-1] == ')') {
+					$tempSearchInfo[1] = substr($tempSearchInfo[1], 0, -1);
+				}
+
+				if (array_key_exists($tempSearchInfo[0], $this->searchIndexes)) {
+					$type = $tempSearchInfo[0];
+					$searchTerm = $tempSearchInfo[1];
+				} else {
+					$validFields = $this->loadValidFields();
+					if (is_null($validFields)) {
+						$validFields = [];
+					}
+					$dynamicFields = $this->loadDynamicFields();
+					if (is_null($dynamicFields)) {
+						$dynamicFields = [];
+					}
+
+					if (!in_array($tempSearchInfo[0], $validFields) && !in_array($tempSearchInfo[0], $dynamicFields) || array_key_exists($tempSearchInfo[0], $this->advancedTypes)) {
+						$searchTerm = str_replace(':', ' ', $searchTerm);
+					} else {
+						return false;
+					}
+				}
+			} else {
+				//This is an advanced search
+				return false;
+			}
+		}
+
+		$searchTerm = $this->runSearchInterpreter($type, $enableSearchInterpreter, $searchTerm);
+
+		$this->searchTerms[] = [
+			'index' => $type,
+			'lookfor' => $searchTerm,
+		];
+
+		if (isset($_REQUEST['searchId']) && is_numeric($_REQUEST['searchId'])) {
+			$searchEntry = new SearchEntry();
+			$searchEntry->id = $_REQUEST['searchId'];
+			if ($searchEntry->find(true)) {
+				$activeUserId = UserAccount::getActiveUserId();
+				if ($activeUserId && ($activeUserId == $searchEntry->user_id)) {
+					$this->searchId = $searchEntry->id;
+					$this->savedSearch = $searchEntry->saved;
+				} elseif ($searchEntry->session_id == session_id()) {
+					$this->searchId = $searchEntry->id;
+					$this->savedSearch = $searchEntry->saved;
+				}
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * Initialise the object for retrieving advanced
 	 *   search screen facet data from inside solr.
 	 *
 	 * @access  public
 	 * @return  boolean
 	 */
-	public function initAdvancedFacets() {
+	public function initAdvancedFacets() : bool {
 		global $locationSingleton;
 		// Call the standard initialization routine in the parent:
 		parent::init();
@@ -198,7 +307,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 			$facets = $searchLibrary->getGroupedWorkDisplaySettings()->getFacets();
 		}
 
-		foreach ($facets as &$facet) {
+		foreach ($facets as $facet) {
 			//Adjust facet name for local scoping
 			$facet->facetName = $this->getScopedFieldName($facet->facetName);
 		}
@@ -223,7 +332,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 		return true;
 	}
 
-	public function getDebugTiming() {
+	public function getDebugTiming() : ?string {
 		if (!$this->debug) {
 			return null;
 		} else {
@@ -239,9 +348,9 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * Return the field (index) searched by a basic search
 	 *
 	 * @access  public
-	 * @return  string   The searched index
+	 * @return  ?string   The searched index
 	 */
-	public function getSearchIndex() {
+	public function getSearchIndex() : ?string {
 		// Use normal parent method for non-advanced searches.
 		if ($this->searchType == $this->basicSearchType || $this->searchType == 'author') {
 			return parent::getSearchIndex();
@@ -255,10 +364,10 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	}
 
 	/**
-	 * @param array $orderedListOfIDs Use the index of the matched ID as the index of the resulting array of summary data (for later merging)
+	 * @param ?array $orderedListOfIDs Use the index of the matched ID as the index of the resulting array of summary data (for later merging)
 	 * @return array
 	 */
-	public function getTitleSummaryInformation($orderedListOfIDs = []) {
+	public function getTitleSummaryInformation(?array $orderedListOfIDs = []) : array {
 		global $solrScope;
 		$titleSummaries = [];
 		for ($x = 0; $x < count($this->indexResult['response']['docs']); $x++) {
@@ -292,29 +401,12 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	}
 
 	/*
-	 * Get an array of citations for the records within the search results
-	 */
-	public function getCitations($citationFormat) {
-		global $interface;
-		$html = [];
-		for ($x = 0; $x < count($this->indexResult['response']['docs']); $x++) {
-			$current = &$this->indexResult['response']['docs'][$x];
-			$interface->assign('recordIndex', $x + 1);
-			$interface->assign('resultIndex', $x + 1 + (($this->page - 1) * $this->limit));
-			/** @var GroupedWorkDriver $record */
-			$record = RecordDriverFactory::initRecordDriver($current);
-			$html[] = $interface->fetch($record->getCitation($citationFormat));
-		}
-		return $html;
-	}
-
-	/*
 	 *  Get the template to use to display the results returned from getRecordHTML()
 	 *  based on the view mode
 	 *
 	 * @return string  Template file name
 	 */
-	public function getDisplayTemplate() {
+	public function getDisplayTemplate() :string {
 		if ($this->view == 'covers') {
 			$displayTemplate = 'Search/covers-list.tpl'; // structure for bookcover tiles
 		} else { // default
@@ -330,7 +422,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * @access  public
 	 * @return  array   Array of HTML chunks for individual records.
 	 */
-	public function getResultRecordHTML() {
+	public function getResultRecordHTML() : array {
 		global $interface;
 		global $memoryWatcher;
 		global $timer;
@@ -343,7 +435,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 			$isSaved = $searchEntry->saved;
 		}
 		global $library;
-		$location = Location::getSearchLocation(null);
+		$location = Location::getSearchLocation();
 		if ($location != null) {
 			$groupedWorkDisplaySettings = $location->getGroupedWorkDisplaySettings();
 		} else {
@@ -352,10 +444,6 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 		$alwaysFlagNewTitles = $groupedWorkDisplaySettings->alwaysFlagNewTitles;
 		$html = [];
 		if (isset($this->indexResult['response'])) {
-			$allWorkIds = [];
-			for ($x = 0; $x < count($this->indexResult['response']['docs']); $x++) {
-				$allWorkIds[] = $this->indexResult['response']['docs'][$x]['id'];
-			}
 			require_once ROOT_DIR . '/RecordDrivers/GroupedWorkDriver.php';
 			$timer->logTime('Loaded archive links');
 			for ($x = 0; $x < count($this->indexResult['response']['docs']); $x++) {
@@ -399,21 +487,11 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * Set an overriding array of record IDs.
 	 *
 	 * @access  public
-	 * @param array $ids Record IDs to load
+	 * @param string[] $ids Record IDs to load
 	 */
-	public function setQueryIDs($ids) {
+	public function setQueryIDs(array $ids) : void {
 		$this->searchType = 'basic';
 		$this->query = 'id:(' . implode(' OR ', $ids) . ')';
-	}
-
-	/**
-	 * Set an overriding string.
-	 *
-	 * @access  public
-	 * @param string $newQuery Query string
-	 */
-	public function setQueryString($newQuery) {
-		$this->query = $newQuery;
 	}
 
 	/**
@@ -422,7 +500,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * @access  public
 	 * @param string $newSort Sort string
 	 */
-	public function setFacetSortOrder($newSort) {
+	public function setFacetSortOrder(string $newSort) : void {
 		// As of Solr 1.4 valid values are:
 		// 'count' = relevancy ranked
 		// 'index' = index order, most likely alphabetical
@@ -432,7 +510,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 		}
 	}
 
-	public function supportsSuggestions() {
+	public function supportsSuggestions() : bool {
 		return true;
 	}
 
@@ -441,8 +519,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * @param string $searchIndex
 	 * @return array
 	 */
-	public function getSearchSuggestions($searchTerm, $searchIndex) {
-		$suggestionHandler = 'suggest';
+	public function getSearchSuggestions($searchTerm, $searchIndex) : array {
 		if ($searchIndex == 'Title' || $searchIndex == 'StartOfTitle' || $searchIndex == 'Series') {
 			$suggestionHandler = 'title_suggest';
 		} elseif ($searchIndex == 'Author') {
@@ -464,7 +541,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * @access  public
 	 * @return  array    Sort value => description array.
 	 */
-	public function getSortOptions() {
+	public function getSortOptions() : array {
 		// Author/Search screen
 		if ($this->searchType == 'author' && $this->searchSubType == 'search') {
 			// It's important to remember here we are talking about on-screen
@@ -486,12 +563,205 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	}
 
 	/**
+	 * @param string $type
+	 * @param mixed $enableSearchInterpreter
+	 * @param string $searchTerm
+	 * @return string
+	 */
+	public function runSearchInterpreter(string $type, bool $enableSearchInterpreter, string $searchTerm): string {
+		$splitPattern = "/[|,]\s*/";
+		if ($type == 'Keyword' && $enableSearchInterpreter && !empty($searchTerm)) {
+			$changeMade = false;
+			$searchTermLower = strtolower($searchTerm);
+
+			require_once ROOT_DIR . '/sys/SearchObject/SearchInterpreterSetting.php';
+			$searchInterpreterSettings = new SearchInterpreterSetting();
+			if (!$searchInterpreterSettings->find(true)) {
+				return $searchTerm;
+			}
+
+			//Ignore boolean searches
+			if (preg_match('/(\b)AND|OR|NOT(\b)/i', $searchTerm)) {
+				return $searchTerm;
+			}
+
+			$searchTermsToSkip = $searchInterpreterSettings->getTermsToSkipAsStrings();
+			foreach ($searchTermsToSkip as $term) {
+				$valueToCheck = preg_quote($term, '/');
+				if (preg_match('/(\b|^)' . $valueToCheck . '(\b|$)/i', $searchTerm)) {
+					return $searchTerm;
+				}
+			}
+
+			$hasFormatApplied = false;
+			if ($searchInterpreterSettings->processFormats || $searchInterpreterSettings->processPluralFormats) {
+				$formatsToSkip = preg_split($splitPattern, strtolower($searchInterpreterSettings->formatsToSkip), -1, PREG_SPLIT_NO_EMPTY);;
+				$pluralFormatsToSkip = preg_split($splitPattern, strtolower($searchInterpreterSettings->pluralFormatsToSkip), -1, PREG_SPLIT_NO_EMPTY);;
+				require_once ROOT_DIR . '/sys/Indexing/IndexedFormat.php';
+				$indexedFormatObj = new IndexedFormat();
+				$indexedFormatObj->orderBy('LENGTH(format) DESC');
+				$indexedFormats = $indexedFormatObj->fetchAll('format');
+				foreach ($indexedFormats as $indexedFormat) {
+					$quoteValue = true;
+					$indexedFormatLower = strtolower($indexedFormat);
+					$checkSingular = $searchInterpreterSettings->processFormats && (!in_array($indexedFormatLower, $formatsToSkip));
+					$checkPlural = $searchInterpreterSettings->processPluralFormats && (!in_array($indexedFormatLower, $pluralFormatsToSkip)) && (!in_array($indexedFormatLower . 's', $pluralFormatsToSkip));
+					if ($indexedFormat == 'Large Print' || $indexedFormat == 'Large Type') {
+						$indexedFormatRegex = '(Large Print|Large type)( books)?';
+						$quoteValue = false;
+					} else {
+						$indexedFormatRegex = $indexedFormat;
+					}
+					$filterApplied = $this->checkAndApplyFacetValueToSearch($searchTerm, $indexedFormatRegex, $checkSingular, $checkPlural, $searchInterpreterSettings->processNew, $quoteValue, 'format', $indexedFormat);
+					$hasFormatApplied = $hasFormatApplied && $filterApplied;
+				}
+			}
+
+			if (!$hasFormatApplied && $searchInterpreterSettings->processFormatCategories) {
+				$formatCategoriesToSkip = preg_split($splitPattern, strtolower($searchInterpreterSettings->formatCategoriesToSkip), -1, PREG_SPLIT_NO_EMPTY);;
+				$indexedFormatCategories = [
+					'Books',
+					'eBooks',
+					'Audio Books',
+					'Music',
+					'Movies'
+				];
+				$hasFormatCategoryApplied = false;
+				//Since Format Category is not multi-select we only want to pick one.
+				//i.e. Books and Audio Books would return less than either on their own
+				foreach ($indexedFormatCategories as $indexedFormatCategory) {
+					if (in_array(strtolower($indexedFormatCategory), $formatCategoriesToSkip)) {
+						continue;
+					}
+					$quoteValue = true;
+					if ($indexedFormatCategory == 'Movies') {
+						$indexedFormatCategoryRegex = '(Movie|Video)';
+						$checkPlural = true;
+						$quoteValue = false;
+					}else{
+						$indexedFormatCategoryRegex = $indexedFormatCategory;
+						$checkPlural = false;
+					}
+					$filterApplied = $this->checkAndApplyFacetValueToSearch($searchTerm, $indexedFormatCategoryRegex, $quoteValue, $checkPlural, $searchInterpreterSettings->processNew, false, 'format_category', $indexedFormatCategory);
+					/** @noinspection PhpConditionAlreadyCheckedInspection */
+					$hasFormatCategoryApplied = $hasFormatCategoryApplied && $filterApplied;
+					//We can only apply one format category
+					if ($hasFormatCategoryApplied) {
+						break;
+					}
+				}
+			}
+
+			if ($searchInterpreterSettings->processAudiences || $searchInterpreterSettings->processPluralAudiences) {
+				$audiencesToSkip = preg_split($splitPattern, strtolower($searchInterpreterSettings->audiencesToSkip), -1, PREG_SPLIT_NO_EMPTY);;
+				$pluralAudiencesToSkip = preg_split($splitPattern, strtolower($searchInterpreterSettings->pluralAudiencesToSkip), -1, PREG_SPLIT_NO_EMPTY);;
+				$processSingular = $searchInterpreterSettings->processAudiences && !in_array('kid', $audiencesToSkip);
+				$processPlural = $searchInterpreterSettings->processPluralAudiences && !in_array('kids', $pluralAudiencesToSkip);
+				$this->checkAndApplyFacetValueToSearch($searchTerm, '(kid|children|juvenile)', $processSingular, $processPlural, $searchInterpreterSettings->processNew, false, $searchInterpreterSettings->audienceFacet, 'Juvenile');
+				$processSingular = $searchInterpreterSettings->processAudiences && !in_array('teen', $audiencesToSkip);
+				$processPlural = $searchInterpreterSettings->processPluralAudiences && !in_array('teens', $pluralAudiencesToSkip);
+				$this->checkAndApplyFacetValueToSearch($searchTerm, '(teen|young adult)', $processSingular, $processPlural, $searchInterpreterSettings->processNew, false, $searchInterpreterSettings->audienceFacet, 'Young Adult');
+				$processSingular = $searchInterpreterSettings->processAudiences && !in_array('adult', $audiencesToSkip);
+				$processPlural = $searchInterpreterSettings->processPluralAudiences && !in_array('adults', $pluralAudiencesToSkip);
+				$this->checkAndApplyFacetValueToSearch($searchTerm, '(adult|senior)', $processSingular, $processPlural, $searchInterpreterSettings->processNew, false, $searchInterpreterSettings->audienceFacet, 'Adult');
+			}
+			if ($searchInterpreterSettings->processFictionNonFiction) {
+				$this->checkAndApplyFacetValueToSearch($searchTerm, 'non[-\s]?fiction(al)?', true, false, $searchInterpreterSettings->processNew, false, $searchInterpreterSettings->fictionNonFictionFacet, 'Non Fiction');
+				$this->checkAndApplyFacetValueToSearch($searchTerm, '(?<!science\s)fiction(al)?', true, false, $searchInterpreterSettings->processNew, false, $searchInterpreterSettings->fictionNonFictionFacet, 'Fiction');
+			}
+			if ($this->automaticFacetsApplied && $searchInterpreterSettings->processAvailable) {
+				$this->checkAndApplyFacetValueToSearch($searchTerm, 'available', true, false, false, false, 'availability_toggle', 'available');
+			}
+
+			$specialSearchTerms = $searchInterpreterSettings->getSpecialTerms();
+			foreach ($specialSearchTerms as $term) {
+				$applied = $this->checkAndApplyFacetValueToSearch($searchTerm, $term->term, true, false, $searchInterpreterSettings->processNew, false, null, null, $term->facetsToApply);
+				if ($applied && !empty($term->sortToApply)) {
+					$this->setSort($term->sortToApply);
+				}
+			}
+
+			if ($this->automaticFacetsApplied) {
+				$searchTerm = preg_replace('/for/i', '', $searchTerm);
+				$searchTerm = preg_replace('/about/i', '', $searchTerm);
+				$searchTerm = preg_replace('/\s\s/i', ' ', $searchTerm);
+				$searchTerm = preg_replace('/\.$/', ' ', $searchTerm);
+				$searchTerm = trim($searchTerm);
+			}
+		}
+		return $searchTerm;
+	}
+
+	public function hasAutomaticFacetsApplied() : bool {
+		return $this->automaticFacetsApplied;
+	}
+
+	protected function checkAndApplyFacetValueToSearch(string &$searchTerm, string $valueToCheck, bool $checkSingular, bool $checkPlural, bool $processNew, bool $quoteValue, ?string $facetToApply = null, ?string $facetValueToApply = null, ?string $facetBlockToApply = null) : bool {
+		if (empty($searchTerm)) {
+			return false;
+		}
+		$numChanges = 0;
+		$prefixedWithNew = false;
+		if ($quoteValue) {
+			$valueToCheck = preg_quote($valueToCheck, '/');
+			$valueToCheck = str_replace(' ', '\s?', $valueToCheck);
+		}
+		if ($checkPlural && $checkSingular) {
+			//This is a really simple check
+			$valueToCheck .= 's?';
+		}elseif ($checkSingular) {
+			//No need to adjust the value
+		}elseif ($checkPlural) {
+			$valueToCheck .= 's';
+		}else{
+			//Checking neither, bail
+			return false;
+		}
+		//First check to see if the value is prefixed by new (i.e. new non-fiction)
+		if ($processNew) {
+			$searchTerm = preg_replace('/(\b|^)new ' . $valueToCheck . '(\b|$)/i', '', $searchTerm, -1, $numChanges);
+		}
+
+		if ($numChanges == 0) {
+			//If we got no changes then check without the new prefix
+			$searchTerm = preg_replace('/(\b|^)' . $valueToCheck . '(\b|$)/i', '', $searchTerm, -1, $numChanges);
+		}else{
+			$prefixedWithNew = true;
+		}
+
+		if ($numChanges > 0) {
+			if ($facetToApply != null && $facetValueToApply != null) {
+				$this->addFilter("$facetToApply:$facetValueToApply");
+			}
+			if ($facetBlockToApply != null) {
+				$facetsToApply = explode("\n", $facetBlockToApply);
+				foreach ($facetsToApply as $facet) {
+					$facet = trim($facet);
+					if (!empty($facet)) {
+						$this->addFilter($facet);
+					}
+				}
+			}
+			if ($prefixedWithNew) {
+				$lastYear = date('Y', strtotime('-1 year'));
+				$this->addFilter("publishDateSort:[$lastYear TO *]");
+				$this->setSort('days_since_added asc');
+			}
+			$this->automaticFacetsApplied = true;
+			$searchTerm = trim($searchTerm);
+			return true;
+		}else{
+			return false;
+		}
+	}
+
+	/**
 	 * Get the base URL for search results (including ? parameter prefix).
 	 *
 	 * @access  protected
 	 * @return  string   Base URL
 	 */
-	protected function getBaseUrl() {
+	protected function getBaseUrl() : string {
 		// Base URL is different for author searches:
 		if ($this->searchType == 'author') {
 			if ($this->searchSubType == 'home') {
@@ -539,7 +809,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 				break;
 		}
 
-		//Only use the request search index if we don't have a search index set alread
+		//Only use the request search index if we don't have a search index set already
 		$searchIndexSet = false;
 		foreach ($params as $param) {
 			if (strpos($param, 'searchIndex') == 0) {
@@ -572,7 +842,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * @access  protected
 	 * @return  array           associative: location (top/side) => search settings
 	 */
-	protected function getRecommendationSettings() {
+	protected function getRecommendationSettings() : array {
 		return parent::getRecommendationSettings();
 	}
 
@@ -584,16 +854,16 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * @param null|array $result Existing result set (null to do new search)
 	 * @return  string                  XML document
 	 */
-	public function buildRSS($result = null) {
+	public function buildRSS($result = null) : string {
 		global $configArray;
 		// XML HTTP header
-		header('Content-type: text/xml', true);
+		header('Content-type: text/xml');
 
 		// First, get the search results if none were provided
 		// (we'll go for 50 at a time)
 		if (is_null($result)) {
 			$this->limit = 50;
-			$result = $this->processSearch(false, false);
+			$result = $this->processSearch();
 		}
 
 		$baseUrl = $configArray['Site']['url'];
@@ -634,10 +904,9 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	}
 
 	/**
-	 * Turn our results into a csv document
-	 * @param null|array $result
+	 * Turn our results into a csv document which is returned to the browser
 	 */
-	public function buildExcel($result = null) {
+	public function buildExcel($result = null) : void {
 		global $configArray;
 		global $solrScope;
 		try {
@@ -645,7 +914,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 			// (we'll go for 50 at a time)
 			if (is_null($result)) {
 				$this->limit = 1000;
-				$result = $this->processSearch(false, false);
+				$result = $this->processSearch();
 			}
 
 			//Output to the browser
@@ -779,15 +1048,14 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 
 		/**
 	 * Turn our results into a RIS document
-	 * @param null|array $result
 	 */
 
-	public function buildRisExport($result = null) {
+	public function buildRisExport($result = null) : void {
 		try {
 			// First, get the search results if none were provided
 			if (is_null($result)) {
 				//$this->limit = 1000;
-				$result = $this->processSearch(false, false);
+				$result = $this->processSearch();
 			}
 	
 			$risData = '';
@@ -815,18 +1083,6 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 			$logger->log("Unable to create RIS file: " . $e->getMessage(), Logger::LOG_ERROR);
 		}
 	}
-	
-	/**
-	 * Retrieves a document specified by the ID.
-	 *
-	 * @param string[] $ids An array of documents to retrieve from Solr
-	 * @access  public
-	 * @throws  AspenError
-	 */
-	function searchForRecordIds($ids) {
-		$this->indexResult = $this->indexEngine->searchForRecordIds($ids);
-	}
-
 
 	/**
 	 * Retrieves a document specified by the item barcode.
@@ -847,15 +1103,18 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 * Retrieves a document specified by an isbn.
 	 *
 	 * @param string[] $isbn An array of isbns to check
-	 * @access  public
-	 * @return  string              The requested resource
+	 * @return  ?array              The requested resource
 	 * @throws  AspenError
 	 */
-	function getRecordByIsbn($isbn) {
-		return $this->indexEngine->getRecordByIsbn($isbn, $this->getFieldsToReturn());
+	function getRecordByIsbn(array $isbn) : ?array {
+		if ($this->indexEngine instanceof GroupedWorksSolrConnector || $this->indexEngine instanceof GroupedWorksSolrConnector2) {
+			return $this->indexEngine->getRecordByIsbn($isbn, $this->getFieldsToReturn());
+		}else{
+			return null;
+		}
 	}
 
-	public function setPrimarySearch($flag) {
+	public function setPrimarySearch($flag) : void {
 		parent::setPrimarySearch($flag);
 		$this->indexEngine->isPrimarySearch = $flag;
 	}
@@ -867,7 +1126,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 		}
 	}
 
-	public function getSearchIndexes() {
+	public function getSearchIndexes() : array {
 		return [
 			'Keyword' => translate([
 				'text' => 'Keyword',
@@ -907,12 +1166,12 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 		];
 	}
 
-	public function getRecordDriverForResult($record) {
+	public function getRecordDriverForResult($record) : GroupedWorkDriver {
 		require_once ROOT_DIR . '/RecordDrivers/GroupedWorkDriver.php';
 		return new GroupedWorkDriver($record);
 	}
 
-	public function getSearchesFile() {
+	public function getSearchesFile() : string {
 		return 'groupedWorksSearches';
 	}
 
@@ -924,21 +1183,25 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	 *
 	 * @access    public
 	 *
-	 * @param array[] $ids
-	 * @param int $page
-	 * @param int $limit
-	 * @param string[] $notInterestedTitles
+	 * @param array $ids
+	 * @param ?int $page
+	 * @param ?int $limit
+	 * @param ?string[] $notInterestedTitles
 	 * @return    array                            An array of query results
 	 */
-	function getMoreLikeThese($ids, $page = 1, $limit = 25, array $notInterestedTitles = []) {
-		return $this->indexEngine->getMoreLikeThese($ids, $this->getFieldsToReturn(), $page, $limit, $notInterestedTitles);
+	function getMoreLikeThese(array $ids, ?int $page = 1, ?int $limit = 25, ?array $notInterestedTitles = []) : array {
+		if ($this->indexEngine instanceof GroupedWorksSolrConnector ||  $this->indexEngine instanceof GroupedWorksSolrConnector2) {
+			return $this->indexEngine->getMoreLikeThese($ids, $this->getFieldsToReturn(), $page, $limit, $notInterestedTitles);
+		}else{
+			return [];
+		}
 	}
 
 
 	/**
 	 * @return array
 	 */
-	public function getFacetConfig() {
+	public function getFacetConfig() : array {
 		if ($this->facetConfig == null) {
 			$facetConfig = [];
 			$searchLibrary = Library::getActiveLibrary();
@@ -949,7 +1212,7 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 			} else {
 				$facets = $searchLibrary->getGroupedWorkDisplaySettings()->getFacets();
 			}
-			foreach ($facets as &$facet) {
+			foreach ($facets as $facet) {
 				//Adjust facet name for local scoping
 				$facet->facetName = $this->getScopedFieldName($facet->getFacetName($this->searchVersion));
 
@@ -971,14 +1234,18 @@ abstract class SearchObject_AbstractGroupedWorkSearcher extends SearchObject_Sol
 	}
 
 	function getMoreLikeThis($id, $selectedAvailabilityToggle = 'global', $availableOnly = false, $limitFormat = true, $limit = null, $format = null) {
-		return $this->indexEngine->getMoreLikeThis($id, $selectedAvailabilityToggle, $availableOnly, $limitFormat, $limit, $format, $this->getFieldsToReturn());
+		if ($this->indexEngine instanceof GroupedWorksSolrConnector ||  $this->indexEngine instanceof GroupedWorksSolrConnector2) {
+			return $this->indexEngine->getMoreLikeThis($id, $selectedAvailabilityToggle, $availableOnly, $limitFormat, $limit, $format, $this->getFieldsToReturn());
+		}else{
+			return [];
+		}
 	}
 
-	public function getEngineName() {
+	public function getEngineName() : string {
 		return 'GroupedWork';
 	}
 
-	public function getDefaultIndex() {
+	public function getDefaultIndex() : string {
 		return 'Keyword';
 	}
 }

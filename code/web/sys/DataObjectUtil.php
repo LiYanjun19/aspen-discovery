@@ -230,15 +230,16 @@ class DataObjectUtil {
 				}
 			}
 		} elseif ($property['type'] == 'timestamp') {
-			if (empty($_REQUEST[$propertyName])) {
-				$object->setProperty($propertyName, 0, $property);
-			} else {
-				try {
-					$timeValue = new DateTime($_REQUEST[$propertyName]);
-					$object->setProperty($propertyName, $timeValue->getTimestamp(), $property);
-				} catch (Exception $e) {
-					//Could not load the timestamp
+			if (empty($property['readOnly']) || empty($object->getPrimaryKeyValue())) {
+				if (empty($_REQUEST[$propertyName])) {
 					$object->setProperty($propertyName, 0, $property);
+				} else {
+					try {
+						$timeValue = new DateTime($_REQUEST[$propertyName]);
+						$object->setProperty($propertyName, $timeValue->getTimestamp(), $property);
+					} catch (Exception) {
+						$object->setProperty($propertyName, 0, $property);
+					}
 				}
 			}
 		} elseif ($property['type'] == 'integer') {
@@ -274,7 +275,19 @@ class DataObjectUtil {
 			$object->setProperty($propertyName, $_REQUEST[$propertyName], $property);
 		} elseif ($property['type'] == 'multiSelect') {
 			if (isset($_REQUEST[$propertyName]) && is_array($_REQUEST[$propertyName])) {
-				$object->setProperty($propertyName, $_REQUEST[$propertyName], $property);
+				if (!empty($property['listStyle']) && $property['listStyle'] == 'checkboxWithOptions') {
+					$processedData = [];
+					foreach ($_REQUEST[$propertyName] as $key => $value) {
+						if (is_array($value) && isset($value['_checked']) && $value['_checked'] == '1') {
+							// Remove the _checked marker and keep the rest of the data.
+							unset($value['_checked']);
+							$processedData[$key] = $value;
+						}
+					}
+					$object->setProperty($propertyName, $processedData, $property);
+				} else {
+					$object->setProperty($propertyName, $_REQUEST[$propertyName], $property);
+				}
 			} else {
 				$object->setProperty($propertyName, [], $property);
 			}
@@ -644,6 +657,7 @@ class DataObjectUtil {
 									'multiSelect',
 									'regularExpression',
 									'multilineRegularExpression',
+									'hidden',
 								])) {
 									$oldValue = $subObject->$subPropertyName;
 									$changed = $subObject->setProperty($subPropertyName, $_REQUEST[$requestKey][$id], $subProperty);

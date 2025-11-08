@@ -10,6 +10,9 @@ class Theme extends DataObject {
 	public $logoName;
 	public $favicon;
 	public $defaultCover;
+	public $deleted;
+	public $dateDeleted;
+	public $deletedBy;
 	public $logoApp;
 	public $headerLogoApp;
 	public $headerLogoAlignmentApp;
@@ -2822,10 +2825,18 @@ class Theme extends DataObject {
 	}
 
 	public function delete(bool $useWhere = false, bool $hardDelete = false) : bool|int {
-		$this->clearLibraries();
-		$this->clearLocations();
-		$this->clearDefaultCovers();
-		return parent::delete($useWhere, $hardDelete);
+		$deleted = parent::delete($useWhere, $hardDelete);
+		if ($deleted) {
+			//Only clear libraries and locations if we are doing a hard delete and useWhere is off
+			//  - checking useWhere is needed because useWhere can delete multiple themes at once.
+			//    we probably should get a list of all the objects that were deleted so we can clean up the links for all of them.
+			if ($hardDelete && !$useWhere) {
+				$this->clearLibraries();
+				$this->clearLocations();
+			}
+			$this->clearDefaultCovers();
+		}
+		return $deleted;
 	}
 
 	public function applyDefaults() : void {
@@ -3774,5 +3785,9 @@ class Theme extends DataObject {
 			}
 		}
 		return $this->_themeHierarchy;
+	}
+
+	public function supportsSoftDelete(): bool {
+		return true;
 	}
 }

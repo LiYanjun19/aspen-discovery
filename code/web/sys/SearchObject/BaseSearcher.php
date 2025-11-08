@@ -518,7 +518,10 @@ abstract class SearchObject_BaseSearcher {
 			// Advanced Search
 			$params[] = "join=" . urlencode($this->searchTerms[0]['join']);
 			for ($i = 0; $i < count($this->searchTerms); $i++) {
-				$params[] = "bool" . $i . "[]=" . urlencode($this->searchTerms[$i]['group'][0]['bool']);
+				$boolValue = $this->searchTerms[$i]['group'][0]['bool'];
+				if (!empty($boolValue)) {
+					$params[] = "bool" . $i . "[]=" . urlencode($boolValue);
+				}
 				for ($j = 0; $j < count($this->searchTerms[$i]['group']); $j++) {
 					$params[] = "lookfor" . $i . "[" . $j . "]=" . urlencode($this->searchTerms[$i]['group'][$j]['lookfor']);
 					$params[] = "type" . $i . "[" . $j . "]=" . urlencode($this->searchTerms[$i]['group'][$j]['field']);
@@ -1928,12 +1931,8 @@ abstract class SearchObject_BaseSearcher {
 	/**
 	 * Initialise the object from the global
 	 *  search parameters in $_REQUEST.
-	 *
-	 * @access  public
-	 * @return  boolean
-	 * @var string $searchSource
 	 */
-	public function init($searchSource = null) {
+	public function init(?string $searchSource = null) : bool {
 		$this->initTime = time();
 		$this->searchSource = $searchSource;
 		return true;
@@ -2045,9 +2044,9 @@ abstract class SearchObject_BaseSearcher {
 	 * Return the field (index) searched by a basic search
 	 *
 	 * @access  public
-	 * @return  string   The searched index
+	 * @return  ?string   The searched index
 	 */
-	public function getSearchIndex() {
+	public function getSearchIndex() : ?string {
 		// Single search index does not apply to advanced search:
 		if ($this->searchType == $this->advancedSearchType) {
 			return null;
@@ -2753,7 +2752,7 @@ abstract class SearchObject_BaseSearcher {
 	/**
 	 * @return bool
 	 */
-	public function supportsSuggestions() {
+	public function supportsSuggestions() : bool {
 		return false;
 	}
 

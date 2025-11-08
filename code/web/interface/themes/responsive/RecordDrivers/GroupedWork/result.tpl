@@ -12,7 +12,7 @@
 						<div class="listResultImage img-thumbnail {$coverStyle}">
 							<a href="{$summUrl}" tabindex="-1">
 								{if !empty($isNew)}<span class="list-cover-badge">{translate text="New!" isPublicFacing=true}</span> {/if}
-								<img src="{$bookCoverUrlMedium}" alt="{$summTitle|removeTrailingPunctuation|escapeCSS}" title="{$summTitle|removeTrailingPunctuation|escapeCSS}">
+								<img src="{$bookCoverUrlMedium}" class="{if $useOriginalCoverUrls}use-original-covers{/if}" alt="{$summTitle|removeTrailingPunctuation|escapeCSS}" title="{$summTitle|removeTrailingPunctuation|escapeCSS}">
 							</a>
 						</div>
 					{/if}
@@ -28,7 +28,7 @@
 					{* Title Row *}
 
 					<div class="col-xs-12">
-						<h3 style="margin-top:0">{if !empty($resultIndex)}<span class="result-index">{$resultIndex})</span>{/if}&nbsp;
+						<h2 style="margin:0;font-size:inherit;">{if !empty($resultIndex)}<span class="result-index">{$resultIndex})</span>{/if}&nbsp;
 						<a href="{$summUrl}&referred=resultIndex" class="result-title notranslate" aria-label="{$summTitle|removeTrailingPunctuation|escapeCSS} {if !empty($summSubTitle)}{if $summSubTitle|removeTrailingPunctuation} {$summSubTitle|removeTrailingPunctuation|highlight|escapeCSS|truncate:180:'...'}{/if}{/if}">
 							{if !$summTitle|removeTrailingPunctuation} {translate text='Title not available' isPublicFacing=true}{else}{$summTitle|removeTrailingPunctuation|highlight|truncate:180:"..."}{/if}
 							{if !empty($summSubTitle)}{if $summSubTitle|removeTrailingPunctuation}: {$summSubTitle|removeTrailingPunctuation|highlight|truncate:180:"..."}{/if}{/if}
@@ -36,7 +36,7 @@
 						{if isset($summScore)}
 							&nbsp;(<a href="#" onclick="return AspenDiscovery.showElementInPopup('Score Explanation', '#scoreExplanationValue{$summId|escape}');">{$summScore}</a>)
 						{/if}
-						</h3>
+						</h2>
 					</div>
 
 
@@ -84,6 +84,20 @@
 											{/if}
 										{elseif !empty($summSeries.seriesTitle)}
 											<a href="/Search/Results?searchIndex=Series&lookfor={$summSeries.seriesTitle}&sort=year+asc%2Ctitle+asc">{$summSeries.seriesTitle}</a>{if !empty($summSeries.volume)}<strong> {translate text="volume %1%" 1=$summSeries.volume|format_float_with_min_decimals isPublicFacing=true}</strong>{/if}<br>
+											{if !empty($summSeries.additionalSeries)}
+												{assign var=numSeriesShown value=1}
+												{foreach from=$summSeries.additionalSeries item=additional}
+													{assign var=numSeriesShown value=$numSeriesShown+1}
+													{if $numSeriesShown == 4}
+														<a onclick="$('#moreSeries_{$summId}').show();$('#moreSeriesLink_{$summId}').hide();" id="moreSeriesLink_{$summId}">{translate text='More Series...' isPublicFacing=true}</a>
+														<div id="moreSeries_{$summId}" style="display:none">
+													{/if}
+													<a href="/Search/Results?searchIndex=Series&lookfor={$additional.seriesTitle}&sort=year+asc%2Ctitle+asc">{$additional.seriesTitle}</a>{if !empty($additional.volume)}<strong> {translate text="volume %1%" 1=$additional.volume|format_float_with_min_decimals isPublicFacing=true}</strong>{/if}<br>
+												{/foreach}
+												{if $numSeriesShown >= 4}
+													</div>
+												{/if}
+											{/if}
 										{/if}
 									{/if}
 									{if !empty($indexedSeries) && empty($summSeries.fromSeriesIndex)}
@@ -125,7 +139,7 @@
 					{if !empty($showPublicationDate) && $showPublicationDate}
 						{if $alwaysShowSearchResultsMainDetails || $summPubDate}
 
-							<div class="result-label col-sm-4 col-xs-12">{translate text="Pub. Date" isPublicFacing=true} </div>
+							<div class="result-label col-sm-4 col-xs-12">{translate text="Publication Date" isPublicFacing=true} </div>
 							<div class="result-value col-sm-8 col-xs-12">
 								{if !empty($summPubDate)}
 									{$summPubDate|escape}
@@ -139,7 +153,7 @@
 
 					{if !empty($showPlaceOfPublication) && $showPlaceOfPublication}
 						{if $alwaysShowSearchResultsMainDetails || $summPlaceOfPublication}
-							<div class="result-label col-sm-4 col-xs-12">{translate text="Pub. Places" isPublicFacing=true} </div>
+							<div class="result-label col-sm-4 col-xs-12">{translate text="Publication Places" isPublicFacing=true} </div>
 							<div class="result-value col-sm-8 col-xs-12">
 								{if !empty($summPlaceOfPublication)}
 									{$summPlaceOfPublication|escape}

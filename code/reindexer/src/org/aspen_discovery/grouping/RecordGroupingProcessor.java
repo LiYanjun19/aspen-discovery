@@ -62,14 +62,15 @@ public class RecordGroupingProcessor {
 	private PreparedStatement getCloudLibraryRecordStmt;
 	private PreparedStatement getHooplaRecordStmt;
 	private PreparedStatement getPalaceProjectRecordStmt;
-
 	private PreparedStatement getProductIdForPalaceProjectIdStmt;
-
+	private PreparedStatement getManualGroupForRecordStmt;
+	private PreparedStatement getRecordGroupingOverrideStmt;
+	private PreparedStatement setPermIdForManuallyGroupedRecordsStmt;
 
 	HashMap<String, HashMap<String, String>> translationMaps = new HashMap<>();
-
-	//A list of grouped works that have been manually merged.
 	private final HashSet<String> recordsToNotGroup = new HashSet<>();
+	private final HashMap<String, String> recordGroupingOverrides = new HashMap<>();
+	private final HashMap<String, String> manuallyGroupedRecords = new HashMap<>();
 	private final Long updateTime = new Date().getTime() / 1000;
 
 	protected static long numAuthorAuthoritiesUsed = 0;
@@ -96,8 +97,10 @@ public class RecordGroupingProcessor {
 	public void close(){
 		translationMaps.clear();
 		recordsToNotGroup.clear();
+		recordGroupingOverrides.clear();
 		updatedAndInsertedWorksThisRun.clear();
 		formatsWarned.clear();
+		manuallyGroupedRecords.clear();
 		try {
 			insertGroupedWorkStmt.close();
 			updateDateUpdatedForGroupedWorkStmt.close();
@@ -133,6 +136,9 @@ public class RecordGroupingProcessor {
 			getHooplaRecordStmt.close();
 			getPalaceProjectRecordStmt.close();
 			getProductIdForPalaceProjectIdStmt.close();
+			getRecordGroupingOverrideStmt.close();
+			getManualGroupForRecordStmt.close();
+			setPermIdForManuallyGroupedRecordsStmt.close();
 
 		} catch (Exception e) {
 			logEntry.incErrors("Error closing prepared statements in record grouping processor", e);
@@ -146,7 +152,7 @@ public class RecordGroupingProcessor {
 	 * @param source - The source of the record being removed
 	 * @param id     - The id of the record being removed
 	 */
-	public RemoveRecordFromWorkResult removeRecordFromGroupedWork(String source, String id) {
+	public synchronized RemoveRecordFromWorkResult removeRecordFromGroupedWork(String source, String id) {
 		RemoveRecordFromWorkResult result = new RemoveRecordFromWorkResult();
 		try {
 			//Check to see if the identifier is in the grouped work primary identifiers table
@@ -175,7 +181,7 @@ public class RecordGroupingProcessor {
 			}//If not true, already deleted skip this
 			getWorkForPrimaryIdentifierRS.close();
 		} catch (Exception e) {
-			logEntry.incErrors("Error processing deleted bibs", e);
+			logEntry.incErrors("Error processing removing record from grouped work", e);
 		}
 		return result;
 	}
@@ -270,9 +276,22 @@ public class RecordGroupingProcessor {
 			nonGroupedRecordsRS.close();
 			recordsToNotGroupStmt.close();
 
+			PreparedStatement recordGroupingOverridesStmt = dbConnection.prepareStatement("SELECT source, record_id, grouped_work_permanent_id FROM record_grouping_overrides");
+			ResultSet recordGroupingOverridesRS = recordGroupingOverridesStmt.executeQuery();
+			while (recordGroupingOverridesRS.next()) {
+				String identifier = recordGroupingOverridesRS.getString("source") + ":" + recordGroupingOverridesRS.getString("record_id");
+				String permanentId = recordGroupingOverridesRS.getString("grouped_work_permanent_id");
+				recordGroupingOverrides.put(identifier.toLowerCase(), permanentId);
+			}
+			recordGroupingOverridesRS.close();
+			recordGroupingOverridesStmt.close();
+
+			getRecordGroupingOverrideStmt = dbConnection.prepareStatement("SELECT grouped_work_permanent_id FROM record_grouping_overrides WHERE source = ? AND record_id = ?", ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+
 			getWorkByAlternateTitleAuthorStmt = dbConnection.prepareStatement("SELECT permanent_id from grouped_work_alternate_titles where alternateTitle = ? and alternateAuthor = ? and alternateGroupingCategory = ?", ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
 
-
+			getManualGroupForRecordStmt = dbConnection.prepareStatement("SELECT mgw.title FROM manually_grouped_work_records mgwr JOIN manually_grouped_works mgw ON mgwr.manually_grouped_work_id = mgw.id WHERE mgwr.type = ? AND mgwr.identifier = ?", ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+			setPermIdForManuallyGroupedRecordsStmt = dbConnection.prepareStatement("UPDATE manually_grouped_works mgw JOIN manually_grouped_work_records mgwr ON mgwr.manually_grouped_work_id = mgw.id SET mgw.grouped_work_permanent_id = ? WHERE mgwr.type = ? AND mgwr.identifier = ?");
 		} catch (Exception e) {
 			logEntry.incErrors("Error setting up prepared statements", e);
 		}
@@ -284,29 +303,47 @@ public class RecordGroupingProcessor {
 	}
 
 	/**
-	 * Add a work to the database
+	 * Add a work to the database with proper grouping logic applied in priority order:
+	 * 1. Manual grouping (highest priority): if the record is manually grouped.
+	 * 2. Record grouping overrides: if an override exists for the record.
+	 * 3. Ungrouping (non-grouped records): if the record is marked to not be grouped.
+	 * 4. Alternate title/author grouping: if alternate grouping exists from merged works.
+	 * 5. Default grouping based on title, author, format, etc.
 	 *
-	 * @param primaryIdentifier The primary identifier we are updating the work for
-	 * @param groupedWork       Information about the work itself
+	 * @param primaryIdentifier The primary identifier for the work being updated.
+	 * @param groupedWork Information about the work itself.
+	 * @param primaryDataChanged Whether the primary data has changed (affects date_updated).
+	 * @param originalGroupedWorkId The record's current grouped work ID if already known; null to perform a database lookup; the string "false" to skip lookup when known to not exist.
 	 */
 	void addGroupedWorkToDatabase(RecordIdentifier primaryIdentifier, GroupedWork groupedWork, boolean primaryDataChanged, String originalGroupedWorkId) {
 		String groupedWorkPermanentId = groupedWork.getPermanentId();
-
-		//Check to see if we need to ungroup the record.
 		String primaryIdentifierString = primaryIdentifier.toString();
-		if (recordsToNotGroup.contains(primaryIdentifierString.toLowerCase())) {
-			groupedWork.makeUnique(primaryIdentifierString);
-			groupedWorkPermanentId = groupedWork.getPermanentId();
-		}else{
-			String alternateGroupedWorkPermanentId = checkForAlternateTitleAuthor(groupedWork);
-			if (alternateGroupedWorkPermanentId != null) {
-				if (alternateGroupedWorkPermanentId.length() > 36) {
-					alternateGroupedWorkPermanentId = alternateGroupedWorkPermanentId.substring(0, 36);
-				}
-				alternateGroupedWorkPermanentId += "-" + groupedWork.getLanguage();
-				groupedWorkPermanentId = alternateGroupedWorkPermanentId;
+
+		String manualGroupId = checkForManualGrouping(primaryIdentifier, groupedWork.getLanguage());
+		if (manualGroupId != null) {
+			groupedWorkPermanentId = manualGroupId;
+			groupedWork.overridePermanentId(groupedWorkPermanentId);
+			logger.debug("Using manual grouping for {} -> {}.", primaryIdentifierString, groupedWorkPermanentId);
+		} else {
+			String overridePermanentId = recordGroupingOverrides.get(primaryIdentifierString.toLowerCase());
+			if (overridePermanentId != null) {
+				groupedWorkPermanentId = overridePermanentId;
 				groupedWork.overridePermanentId(groupedWorkPermanentId);
- 			}
+				logger.debug("Using override record grouping for {} -> {}.", primaryIdentifierString, groupedWorkPermanentId);
+			} else if (recordsToNotGroup.contains(primaryIdentifierString.toLowerCase())) {
+				groupedWork.makeUnique(primaryIdentifierString);
+				groupedWorkPermanentId = groupedWork.getPermanentId();
+			} else {
+				String alternateGroupedWorkPermanentId = checkForAlternateTitleAuthor(groupedWork);
+				if (alternateGroupedWorkPermanentId != null) {
+					if (alternateGroupedWorkPermanentId.length() > 36) {
+						alternateGroupedWorkPermanentId = alternateGroupedWorkPermanentId.substring(0, 36);
+					}
+					alternateGroupedWorkPermanentId += "-" + groupedWork.getLanguage();
+					groupedWorkPermanentId = alternateGroupedWorkPermanentId;
+					groupedWork.overridePermanentId(groupedWorkPermanentId);
+				}
+			}
 		}
 
 		//Check to see if the record is already on an existing work.  If so, remove from the old work.
@@ -362,7 +399,6 @@ public class RecordGroupingProcessor {
 			ResultSet existingIdRS = getGroupedWorkIdByPermanentIdStmt.executeQuery();
 
 			if (existingIdRS.next()) {
-				//grouped work already exists
 				groupedWorkId = existingIdRS.getLong("id");
 
 				//Mark that the work has been updated
@@ -1171,5 +1207,46 @@ public class RecordGroupingProcessor {
 
 	public long getNumAuthoritiesUsed() {
 		return numAuthorAuthoritiesUsed;
+	}
+
+	/**
+	 * Check if the record is part of a manually grouped work.
+	 *
+	 * @param primaryIdentifier The primary identifier to check.
+	 * @return The manually grouped work ID or null if not manually grouped.
+	 */
+	private String checkForManualGrouping(RecordIdentifier primaryIdentifier, String recordLanguage) {
+		String primaryIdentifierString = primaryIdentifier.toString();
+		if (manuallyGroupedRecords.containsKey(primaryIdentifierString)) {
+			return manuallyGroupedRecords.get(primaryIdentifierString);
+		}
+
+		try {
+			getManualGroupForRecordStmt.setString(1, primaryIdentifier.getType());
+			getManualGroupForRecordStmt.setString(2, primaryIdentifier.getIdentifier());
+			ResultSet manualGroupRS = getManualGroupForRecordStmt.executeQuery();
+
+			if (manualGroupRS.next()) {
+				String manualGroupTitle = manualGroupRS.getString("title");
+				// Create a unique ID for the manual group based on the title.
+				GroupedWork manualGroupWork = new GroupedWork(this);
+				manualGroupWork.setLanguage(recordLanguage);
+				manualGroupWork.makeUnique("manual_group_" + manualGroupTitle);
+				String manualGroupId = manualGroupWork.getPermanentId();
+				manuallyGroupedRecords.put(primaryIdentifierString, manualGroupId);
+
+				setPermIdForManuallyGroupedRecordsStmt.setString(1, manualGroupId);
+				setPermIdForManuallyGroupedRecordsStmt.setString(2, primaryIdentifier.getType());
+				setPermIdForManuallyGroupedRecordsStmt.setString(3, primaryIdentifier.getIdentifier());
+				setPermIdForManuallyGroupedRecordsStmt.executeUpdate();
+
+				return manualGroupId;
+			}
+			manualGroupRS.close();
+		} catch (SQLException e) {
+			logEntry.incErrors("Error checking for manual grouping for " + primaryIdentifierString + ": ", e);
+		}
+
+		return null;
 	}
 }
