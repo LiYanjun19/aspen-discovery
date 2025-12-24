@@ -40,6 +40,8 @@ public class GroupedWorkIndexer {
 	private boolean removeTheWordSeriesFromEndOfSeries;
 	private int totalRecordsHandled = 0;
 	private ConcurrentUpdateHttp2SolrClient updateServer;
+	private final ArrayList<SolrInputDocument> pendingSolrDocuments = new ArrayList<>();
+	private int solrBatchSize = 20;
 	private RecordGroupingProcessor recordGroupingProcessor;
 	private final HashMap<String, MarcRecordProcessor> ilsRecordProcessors = new HashMap<>();
 	private final HashMap<String, SideLoadedEContentProcessor> sideLoadProcessors = new HashMap<>();
@@ -379,9 +381,9 @@ public class GroupedWorkIndexer {
 
 		String solrUrl;
 		if (indexVersion == 1) {
-			solrUrl = "http://" + solrHost + ":" + solrPort + "/solr/grouped_works";
+			solrUrl = "https://" + solrHost + ":" + solrPort + "/solr/grouped_works";
 		}else{
-			solrUrl = "http://" + solrHost + ":" + solrPort + "/solr/grouped_works_v2";
+			solrUrl = "https://" + solrHost + ":" + solrPort + "/solr/grouped_works_v2";
 		}
 
 		// Load Solr authentication credentials if configured
@@ -397,8 +399,8 @@ public class GroupedWorkIndexer {
 		Http2SolrClient http2Client = http2ClientBuilder.build();
 		try {
 			updateServer = new ConcurrentUpdateHttp2SolrClient.Builder(solrUrl, http2Client)
-				.withThreadCount(1)
-				.withQueueSize(25)
+				.withThreadCount(2)
+				.withQueueSize(50)
 				.build();
 		}catch (OutOfMemoryError e) {
 			logger.error("Unable to create solr client, out of memory", e);
@@ -666,6 +668,7 @@ public class GroupedWorkIndexer {
 		logger.info("Clearing existing work " + permanentId + " from index");
 		//noinspection CommentedOutCode
 		try {
+			flushPendingSolrDocuments();
 			if (permanentId.length() < 40) {
 				//Delete both the original id (if less than 40 characters)
 				updateServer.deleteById(permanentId);
@@ -731,6 +734,7 @@ public class GroupedWorkIndexer {
 		processScheduledWorks(logEntry, true, 100);
 
 		try {
+			flushPendingSolrDocuments();
 			updateServer.commit(false, false, true);
 		}catch (Exception e) {
 			logEntry.incErrors("Error in final commit while finishing extract, shutting down", e);
@@ -759,6 +763,7 @@ public class GroupedWorkIndexer {
 
 	public void commitChanges(){
 		try {
+			flushPendingSolrDocuments();
 			updateServer.commit(false, false, true);
 		}catch (Exception e) {
 			logEntry.incErrors("Error committing changes ", e);
@@ -767,9 +772,42 @@ public class GroupedWorkIndexer {
 
 	public void commitChangesWithWait(){
 		try {
+			flushPendingSolrDocuments();
 			updateServer.commit(false, false, true);
 		}catch (Exception e) {
 			logEntry.incErrors("Error committing changes ", e);
+		}
+	}
+
+	private void addDocumentToBatch(SolrInputDocument document) throws SolrServerException, IOException {
+		pendingSolrDocuments.add(document);
+		if (pendingSolrDocuments.size() >= solrBatchSize) {
+			sendPendingDocuments();
+		}
+	}
+
+	private void flushPendingSolrDocuments() {
+		if (pendingSolrDocuments.isEmpty()) {
+			return;
+		}
+		try {
+			sendPendingDocuments();
+		} catch (Exception e) {
+			logEntry.incErrors("Error sending batched Solr documents", e);
+		}
+	}
+
+	private void sendPendingDocuments() throws SolrServerException, IOException {
+		if (pendingSolrDocuments.isEmpty()) {
+			return;
+		}
+		ArrayList<SolrInputDocument> docsToSend = new ArrayList<>(pendingSolrDocuments);
+		pendingSolrDocuments.clear();
+		UpdateResponse response = updateServer.add(docsToSend);
+		if (response == null) {
+			logEntry.incErrors("Error adding Solr batch of " + docsToSend.size() + " documents, the response was null");
+		} else if (response.getException() != null) {
+			logEntry.incErrors("Error adding Solr batch of " + docsToSend.size() + " documents response: " + response);
 		}
 	}
 
@@ -857,6 +895,7 @@ public class GroupedWorkIndexer {
 		logEntry.addNote("Finishing indexing");
 		if (fullReindex) {
 			try {
+				flushPendingSolrDocuments();
 				logEntry.addNote("Calling final commit");
 				updateServer.commit(false, false, true);
 			} catch (Exception e) {
@@ -892,6 +931,7 @@ public class GroupedWorkIndexer {
 		}else {
 			try {
 				logEntry.addNote("Doing a soft commit to make sure changes are saved");
+				flushPendingSolrDocuments();
 				updateServer.commit(false, false, true);
 				logEntry.addNote("Shutting down the update server");
 				updateServer.blockUntilFinished();
@@ -968,6 +1008,7 @@ public class GroupedWorkIndexer {
 					if (numWorksProcessed % 10000 == 0) {
 						try {
 							logger.info("Doing a regular commit during full indexing");
+							flushPendingSolrDocuments();
 							updateServer.commit(false, false, true);
 						} catch (Exception e) {
 							logger.warn("Error committing changes", e);
@@ -1033,6 +1074,7 @@ public class GroupedWorkIndexer {
 				numDeleted++;
 				if (numDeleted % 10000 == 0) {
 					try {
+						flushPendingSolrDocuments();
 						updateServer.commit(false, false, true);
 					} catch (Exception e) {
 						logger.warn("Error committing changes", e);
@@ -1066,6 +1108,7 @@ public class GroupedWorkIndexer {
 			getGroupedWorkInfoRS.close();
 			totalRecordsHandled++;
 			if (totalRecordsHandled % 1000 == 0) {
+				flushPendingSolrDocuments();
 				updateServer.commit(false, false, true);
 			}
 		} catch (Exception e) {
@@ -1252,12 +1295,7 @@ public class GroupedWorkIndexer {
 				if (inputDocument == null) {
 					logEntry.incErrors("Solr Input document was null for " + groupedWork.getId());
 				} else {
-					UpdateResponse response = updateServer.add(inputDocument);
-					if (response == null) {
-						logEntry.incErrors("Error adding Solr record for " + groupedWork.getId() + ", the response was null");
-					} else if (response.getException() != null) {
-						logEntry.incErrors("Error adding Solr record for " + groupedWork.getId() + " response: " + response);
-					}
+					addDocumentToBatch(inputDocument);
 
 					//Check to see if we need to automatically reindex this record in the future.
 					//Reindexing in the future is done if the time to reshelve is set to ensure that we reindex when that time expires.
