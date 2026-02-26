@@ -30,6 +30,14 @@ function getUpdates26_03_00(): array {
 				'ALTER TABLE palace_project_settings ADD COLUMN requirePin TINYINT(1) DEFAULT 1',
 			]
 		], //allow_require_pin_for_palace_project
+		'update_overdrive_advantage_products_key' => [
+			'title' => 'Update OverDrive Advantage Products Key Length',
+			'description' => 'Change overdriveAdvantageProductsKey to varchar(255) to allow longer advantage collection tokens',
+			'continueOnError' => false,
+			'sql' => [
+				'ALTER TABLE library_overdrive_settings MODIFY COLUMN overdriveAdvantageProductsKey varchar(255) DEFAULT \'\'',
+			]
+		], //update_overdrive_advantage_products_key
 
 		//imani
 
