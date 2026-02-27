@@ -1854,6 +1854,19 @@ class GroupedWorkDriver extends IndexRecordDriver {
 	private $_relatedManifestations = null;
 
 	/**
+	 * Get Currently Applied/Locked facets
+	 * TODO: This exact piece of code is written in several other files
+	 * Can be moved into a utiilty function somewhere.
+	 */
+	private function getCurrentlyAppliedFacets(): array {
+		if(!UserAccount::IsLoggedIn()) {
+			return $_SESSION['lockedFilters'] ?? [];
+		}
+		$user = UserAccount::getActiveUserObj();
+		return !empty($user->lockedFacets) ? json_decode($user->lockedFacets, true) : [];
+	}
+
+	/**
 	 * The vast majority of record information is stored within the index.
 	 * This routine parses the information from the index and restructures it for use within the user interface.
 	 *
@@ -1890,27 +1903,20 @@ class GroupedWorkDriver extends IndexRecordDriver {
 			$selectedLanguages = [];
 			$selectedEcontentSources = [];
 			$filterList = [];
-			if (UserAccount::isLoggedIn()) {
-				$user = UserAccount::getActiveUserObj();
-				$lockedFacets = !empty($user->lockedFacets) ? json_decode($user->lockedFacets, true) : [];
-			} else {
-				$lockedFacets = $_SESSION['lockedFilters'] ?? [];
-			}
-			if (isset($lockedFacets)) {
-				foreach ($lockedFacets as $lockSection => $facets) {
-					if (!is_array($facets)) {
-						continue;
-					}
-					foreach ($facets as $facetName => $values) {
-						$values = is_array($values) ? $values : [$values];
-						foreach ($values as $value) {
-							if (is_string($value) && $value !== '') {
-								$filterList[] = $facetName . ':"' . $value . '"';
-							}
-						}
+			$lockedFacets = $this->getCurrentlyAppliedFacets();
+
+			foreach ($lockedFacets as $facets) {
+				if (!is_array($facets)) continue;
+			
+				foreach ($facets as $facetName => $values) {
+					foreach ((array) $values as $value) {
+						if (!is_string($value) || $value === '') continue;
+			
+						$filterList[] = $facetName . ':"' . $value . '"';
 					}
 				}
 			}
+			
 			if (isset($_REQUEST['filter'])) {
 				foreach ($_REQUEST['filter'] as $filter) {
 					if (!in_array($filter, $filterList)) {
