@@ -104,11 +104,12 @@ class Holiday extends DataObject {
 	}
 
 	private static function getHolidayLocationsList(): array {
+		$libraryId = !empty($_REQUEST['id']) ? (int)$_REQUEST['id'] : 0;
 		$location = new Location();
 		$location->selectAdd();
 		$location->selectAdd('locationId');
 		$location->selectAdd('displayName');
-		$location->whereAdd("libraryId = libraryId");
+		$location->libraryId = $libraryId;
 		$location->useHolidayHoursTable = 1;
 		$location->orderBy('displayName');
 		$location->find();
