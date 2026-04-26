@@ -229,8 +229,8 @@ class Admin_Libraries extends ObjectEditor {
 			'holidays' => [
 				'property' => 'holidays',
 				'type' => 'checkbox',
-				'label' => 'Holidays',
-				'description' => 'Whether or not to copy Holidays',
+				'label' => 'Holidays and Special Hours',
+				'description' => 'Whether or not to copy Holidays and Special Hours',
 				'hideInLists' => false,
 				'default' => true,
 			],
