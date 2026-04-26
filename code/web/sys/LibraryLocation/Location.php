@@ -135,6 +135,7 @@ class Location extends DataObject {
 
 	/** @noinspection PhpUnused */
 	public $allowUpdatingHoursFromILS;
+	public $useHolidayHoursTable;
 	/** @noinspection PhpUnused */
 	public $allowUpdatingContactInfoFromILS;
 
@@ -172,6 +173,7 @@ class Location extends DataObject {
 			'statGroup',
 			'isMainBranch',
 			'showInLocationsAndHoursList',
+			'useHolidayHoursTable',
 			'validHoldPickupBranch',
 			'useScope',
 			'restrictSearchByLocation',
@@ -465,6 +467,15 @@ class Location extends DataObject {
 				'default' => true,
 				'editPermissions' => ['Location Address and Hours Settings'],
 				'affectsLiDA' => true,
+			],
+			'useHolidayHoursTable' => [
+				'property' => 'useHolidayHoursTable',
+				'type' => 'checkbox',
+				'label' => 'Use Holiday Hours Table',
+				'description' => 'Whether or not this location uses the holiday hours table',
+				'hideInLists' => true,
+				'default' => true,
+				'editPermissions' => ['Location Address and Hours Settings'],
 			],
 			'allowUpdatingContactInfoFromILS' => [
 				'property' => 'allowUpdatingContactInfoFromILS',
@@ -2155,6 +2166,9 @@ class Location extends DataObject {
 			$this->saveThemes();
 			$this->saveEventMapping();
 			$this->saveSublocations();
+			if (empty($this->useHolidayHoursTable)) {
+				$this->clearHolidayLocationMappings();
+			}
 		}
 		return $ret;
 	}
@@ -2178,6 +2192,9 @@ class Location extends DataObject {
 			$this->saveThemes();
 			$this->saveEventMapping();
 			$this->saveSublocations();
+			if (empty($this->useHolidayHoursTable)) {
+				$this->clearHolidayLocationMappings();
+			}
 		}
 		return $ret;
 	}
@@ -2247,6 +2264,13 @@ class Location extends DataObject {
 			$this->saveOneToManyOptions($this->_hours, 'locationId');
 			unset($this->_hours);
 		}
+	}
+
+	private function clearHolidayLocationMappings(): void {
+		require_once ROOT_DIR . '/sys/LibraryLocation/HolidayLocation.php';
+		$holidayLocation = new HolidayLocation();
+		$holidayLocation->locationId = $this->locationId;
+		$holidayLocation->delete(true);
 	}
 
 	public function getCloudLibraryScope(): int {

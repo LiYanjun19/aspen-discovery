@@ -32,7 +32,7 @@ class Holiday extends DataObject {
 			return self::$_objectStructure[$context];
 		}
 		$libraryList = Library::getLibraryList(false);
-		$locationList = Location::getLocationList(false);
+		$locationList = self::getHolidayLocationsList();
 
 		$structure = [
 			'id' => [
@@ -101,6 +101,22 @@ class Holiday extends DataObject {
 
 		self::$_objectStructure[$context] = $structure;
 		return self::$_objectStructure[$context];
+	}
+
+	private static function getHolidayLocationsList(): array {
+		$location = new Location();
+		$location->selectAdd();
+		$location->selectAdd('locationId');
+		$location->selectAdd('displayName');
+		$location->whereAdd("libraryId = libraryId");
+		$location->useHolidayHoursTable = 1;
+		$location->orderBy('displayName');
+		$location->find();
+		$locationList = [];
+		while ($location->fetch()) {
+			$locationList[$location->locationId] = $location->displayName;
+		}
+		return $locationList;
 	}
 
 	public function fetch(): bool|DataObject|null {
