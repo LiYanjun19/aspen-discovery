@@ -473,6 +473,7 @@ class Location extends DataObject {
 				'type' => 'checkbox',
 				'label' => 'Use Holiday Hours Table',
 				'description' => 'Whether or not this location uses the holiday hours table',
+				'note' => 'Turning this off removes all existing holiday or special hours mappings for this location.',
 				'hideInLists' => true,
 				'default' => true,
 				'editPermissions' => ['Location Address and Hours Settings'],
