@@ -85,8 +85,10 @@ class Holiday extends DataObject {
 				'type' => 'multiSelect',
 				'listStyle' => 'checkboxList',
 				'label' => 'Locations',
+				'useKeysForValues' => true,
 				'description' => 'Locations this holiday/special-hours entry applies to',
 				'values' => $locationList,
+				'default' => array_keys($locationList),
 			],
 			'notes' => [
 				'property' => 'notes',

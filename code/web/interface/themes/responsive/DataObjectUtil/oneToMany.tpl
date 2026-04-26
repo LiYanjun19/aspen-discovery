@@ -128,11 +128,15 @@
 							{if $subProperty.listStyle == 'checkboxList'}
 								<td>
 									<div class="checkbox">
-										{*this assumes a simple array, eg list *}
 										{assign var=subPropName value=$subProperty.property}
 										{assign var=subPropValue value=$subObject->$subPropName}
-										{foreach from=$subProperty.values item=propertyName}
-											<input name='{$propName}_{$subPropName}[{$subObject->id}][]' type="checkbox" value='{$propertyName}' {if is_array($subPropValue) && in_array($propertyName, $subPropValue)}checked='checked'{/if}{if !empty($subProperty.readOnly) || !empty($property.readOnly) || $instanceReadOnly} readonly disabled{/if}>
+										{foreach from=$subProperty.values item=propertyName key=propertyValue}
+											{if !empty($subProperty.useKeysForValues)}
+												{assign var=checkboxValue value=$propertyValue}
+											{else}
+												{assign var=checkboxValue value=$propertyName}
+											{/if}
+											<input name='{$propName}_{$subPropName}[{$subObject->id}][]' type="checkbox" value='{$checkboxValue|escape}' {if is_array($subPropValue) && (array_key_exists($checkboxValue, $subPropValue) || in_array($checkboxValue, $subPropValue))}checked='checked'{/if}{if !empty($subProperty.readOnly) || !empty($property.readOnly) || $instanceReadOnly} readonly disabled{/if}>
 											{$propertyName|escape}
 											<br>
 										{/foreach}
@@ -296,10 +300,14 @@
 						{if $subProperty.listStyle == 'checkboxList'}
 							newRow += "<td class='oneToManyCell' {if !empty($subProperty.relatedIls)}data-related-ils='~{implode subject=$subProperty.relatedIls glue='~'}~'{/if}>";
 							newRow += '<div class="checkbox">';
-							{*this assumes a simple array, eg list *}
 							{assign var=subPropName value=$subProperty.property}
-							{foreach from=$subProperty.values item=propertyName}
-								newRow += '<input name="{$propName}_{$subPropName}[' + numAdditional{$propName} + '][]" type="checkbox" value="{$propertyName}"> {$propertyName}<br>';
+							{foreach from=$subProperty.values item=propertyName key=propertyValue}
+								{if !empty($subProperty.useKeysForValues)}
+									{assign var=checkboxValue value=$propertyValue}
+								{else}
+									{assign var=checkboxValue value=$propertyName}
+								{/if}
+								newRow += '<input name="{$propName}_{$subPropName}[' + numAdditional{$propName} + '][]" type="checkbox" value="{$checkboxValue|escape:javascript}" {if !empty($subProperty.default) && ((is_array($subProperty.default) && in_array($checkboxValue, $subProperty.default)) || $subProperty.default == $checkboxValue)}checked="checked"{/if}> {$propertyName|escape:javascript}<br>';
 							{/foreach}
 							newRow += '</div>';
 							newRow += '</td>';
