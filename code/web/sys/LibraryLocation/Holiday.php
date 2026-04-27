@@ -110,7 +110,7 @@ class Holiday extends DataObject {
 		$location->selectAdd('locationId');
 		$location->selectAdd('displayName');
 		$location->libraryId = $libraryId;
-		$location->useHolidayHoursTable = 1;
+		$location->showInHolidayHoursTable = 1;
 		$location->orderBy('displayName');
 		$location->find();
 		$locationList = [];
