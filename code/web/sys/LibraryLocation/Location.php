@@ -135,7 +135,7 @@ class Location extends DataObject {
 
 	/** @noinspection PhpUnused */
 	public $allowUpdatingHoursFromILS;
-	public $useHolidayHoursTable;
+	public $showInHolidayHoursTable;
 	/** @noinspection PhpUnused */
 	public $allowUpdatingContactInfoFromILS;
 
@@ -173,7 +173,7 @@ class Location extends DataObject {
 			'statGroup',
 			'isMainBranch',
 			'showInLocationsAndHoursList',
-			'useHolidayHoursTable',
+			'showInHolidayHoursTable',
 			'validHoldPickupBranch',
 			'useScope',
 			'restrictSearchByLocation',
@@ -468,11 +468,11 @@ class Location extends DataObject {
 				'editPermissions' => ['Location Address and Hours Settings'],
 				'affectsLiDA' => true,
 			],
-			'useHolidayHoursTable' => [
-				'property' => 'useHolidayHoursTable',
+			'showInHolidayHoursTable' => [
+				'property' => 'showInHolidayHoursTable',
 				'type' => 'checkbox',
-				'label' => 'Use Holiday Hours Table',
-				'description' => 'Whether or not this location uses the holiday hours table',
+				'label' => 'Show in Holidays & Special Hours table',
+				'description' => 'Whether or not this location shows in the holiday & special hours table',
 				'note' => 'Turning this off removes all existing holiday or special hours mappings for this location.',
 				'hideInLists' => true,
 				'default' => true,
@@ -2167,7 +2167,7 @@ class Location extends DataObject {
 			$this->saveThemes();
 			$this->saveEventMapping();
 			$this->saveSublocations();
-			if (empty($this->useHolidayHoursTable)) {
+			if (empty($this->showInHolidayHoursTable)) {
 				$this->clearHolidayLocationMappings();
 			}
 		}
@@ -2193,7 +2193,7 @@ class Location extends DataObject {
 			$this->saveThemes();
 			$this->saveEventMapping();
 			$this->saveSublocations();
-			if (empty($this->useHolidayHoursTable)) {
+			if (empty($this->showInHolidayHoursTable)) {
 				$this->clearHolidayLocationMappings();
 			}
 		}
@@ -2339,7 +2339,7 @@ class Location extends DataObject {
 			$todayFormatted = date('Y-m-d', $timeToCheck);
 
 			// check to see if today has holiday or special hours
-			if (!empty($location->useHolidayHoursTable)) {
+			if (!empty($location->showInHolidayHoursTable)) {
 				require_once ROOT_DIR . '/sys/LibraryLocation/Holiday.php';
 				require_once ROOT_DIR . '/sys/LibraryLocation/HolidayLocation.php';
 				$holiday = new Holiday();

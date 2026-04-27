@@ -212,7 +212,7 @@ function getUpdates26_04_00(): array {
 			'description' => 'Add a column to the location table to indicate whether the library uses the holiday hours table',
 			'continueOnError' => false,
 			'sql' => [
-				'ALTER TABLE location ADD COLUMN useHolidayHoursTable TINYINT(1) NOT NULL DEFAULT 1',
+				'ALTER TABLE location ADD COLUMN showInHolidayHoursTable TINYINT(1) NOT NULL DEFAULT 1',
 			]
 		], //add_use_holiday_hours_table_to_location_table
 
