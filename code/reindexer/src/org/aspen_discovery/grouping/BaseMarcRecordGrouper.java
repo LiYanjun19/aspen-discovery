@@ -8,7 +8,6 @@ import com.turning_leaf_technologies.logging.BaseIndexingLogEntry;
 import com.turning_leaf_technologies.marc.MarcUtil;
 import org.apache.logging.log4j.Logger;
 import org.marc4j.marc.*;
-import org.marc4j.marc.Record;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -301,6 +300,10 @@ public abstract class BaseMarcRecordGrouper extends RecordGroupingProcessor {
 			languages = MarcUtil.getFieldList(marcRecord, secondaryLanguageField);
 			for (String language : languages){
 				language = language.replaceAll("^[^a-zA-Z]+|[^a-zA-Z]+$|\\p{Punct}", "");
+				language = translateValue("language_to_three_letter_code", language);
+				if (language == null || language.length() != 3 || language.contains(" ")) {
+					continue;
+				}
 				if (activeLanguage == null){
 					activeLanguage = language;
 				}else{
