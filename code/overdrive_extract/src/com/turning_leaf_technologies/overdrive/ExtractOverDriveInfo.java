@@ -45,6 +45,7 @@ class ExtractOverDriveInfo {
 	private String overDriveAPITokenType;
 	private long overDriveAPIExpiration;
 	private final HashMap<String, HashSet<Long>> collectionTokenToLibraryIds = new HashMap<>();
+	private final HashMap<Long, String> libraryIdToPrimaryCollectionToken = new HashMap<>();
 
 	private final ConcurrentHashMap<String, OverDriveRecordInfo> allProductsInOverDrive = new ConcurrentHashMap<>();
 	private final List<AdvantageCollectionInfo> allAdvantageCollections = Collections.synchronizedList(new ArrayList<>());
@@ -505,14 +506,19 @@ class ExtractOverDriveInfo {
 			dbConn.prepareStatement("UPDATE overdrive_settings set runFullUpdate = 0 where id = " + settings.getId()).executeUpdate();
 		}
 
-		PreparedStatement advantageCollectionMapStmt = dbConn.prepareStatement("SELECT library.libraryId, library_overdrive_settings.overdriveAdvantageName, library_overdrive_settings.overdriveAdvantageProductsKey FROM library INNER JOIN library_overdrive_settings on library.libraryId = library_overdrive_settings.libraryId where library_overdrive_settings.overdriveAdvantageName != '' and settingId = ?");
+		PreparedStatement advantageCollectionMapStmt = dbConn.prepareStatement("SELECT library.libraryId, library_overdrive_settings.overdriveAdvantageName, library_overdrive_settings.overdriveAdvantageProductsKey, library_overdrive_settings.overdriveAdvantageKeyAdditional FROM library INNER JOIN library_overdrive_settings on library.libraryId = library_overdrive_settings.libraryId where library_overdrive_settings.overdriveAdvantageName != '' and settingId = ?");
 		advantageCollectionMapStmt.setLong(1, settings.getId());
 		ResultSet advantageCollectionMapRS = advantageCollectionMapStmt.executeQuery();
 		while (advantageCollectionMapRS.next()){
 			long libraryId = advantageCollectionMapRS.getLong(1);
-			String advantageProductsKey = advantageCollectionMapRS.getString(3);
-			if (advantageProductsKey != null) {
-				String[] tokens = advantageProductsKey.split(",");
+			String primaryAdvantageKey = advantageCollectionMapRS.getString(3);
+			String additionalAdvantageKeys = advantageCollectionMapRS.getString(4);
+			if (primaryAdvantageKey != null) {
+				addCollectionTokenMapping(primaryAdvantageKey, libraryId);
+				libraryIdToPrimaryCollectionToken.put(libraryId, primaryAdvantageKey);
+			}
+			if (additionalAdvantageKeys != null) {
+				String[] tokens = additionalAdvantageKeys.split(",");
 				for (String token : tokens) {
 					String trimmedToken = token.trim();
 					if (!trimmedToken.isEmpty()) {
@@ -1368,12 +1374,34 @@ class ExtractOverDriveInfo {
 
 		List<AdvantageCollectionInfo> collections = new ArrayList<>(overDriveInfo.getCollections());
 		HashMap<AdvantageCollectionInfo, HashSet<Long>> libraryIdsToUpdateByCollection = new HashMap<>();
+		HashMap<Long, AdvantageCollectionInfo> selectedCollectionByLibrary = new HashMap<>();
+		HashSet<Long> remainingLibraryIds = new HashSet<>();
 		for (AdvantageCollectionInfo collectionInfo : collections) {
 			if (collectionInfo.getAspenLibraryIds().isEmpty()) {
 				continue;
 			}
-			HashSet<Long> libraryIdsToUpdate = new HashSet<>(collectionInfo.getAspenLibraryIds());
-			libraryIdsToUpdateByCollection.put(collectionInfo, libraryIdsToUpdate);
+			for (Long aspenLibraryId : collectionInfo.getAspenLibraryIds()) {
+				String primaryToken = libraryIdToPrimaryCollectionToken.get(aspenLibraryId);
+				if (primaryToken != null && primaryToken.equals(collectionInfo.getCollectionToken())) {
+					selectedCollectionByLibrary.put(aspenLibraryId, collectionInfo);
+				}
+				remainingLibraryIds.add(aspenLibraryId);
+			}
+		}
+		for (AdvantageCollectionInfo collectionInfo : collections) {
+			if (collectionInfo.getAspenLibraryIds().isEmpty()) {
+				continue;
+			}
+			for (Long aspenLibraryId : collectionInfo.getAspenLibraryIds()) {
+				if (!selectedCollectionByLibrary.containsKey(aspenLibraryId) && remainingLibraryIds.contains(aspenLibraryId)) {
+					selectedCollectionByLibrary.put(aspenLibraryId, collectionInfo);
+				}
+			}
+		}
+		for (Map.Entry<Long, AdvantageCollectionInfo> entry : selectedCollectionByLibrary.entrySet()) {
+			AdvantageCollectionInfo collectionInfo = entry.getValue();
+			HashSet<Long> libraryIdsToUpdate = libraryIdsToUpdateByCollection.computeIfAbsent(collectionInfo, key -> new HashSet<>());
+			libraryIdsToUpdate.add(entry.getKey());
 		}
 
 		if (!libraryIdsToUpdateByCollection.isEmpty()) {
@@ -1729,6 +1757,7 @@ class ExtractOverDriveInfo {
 		}
 
 		collectionTokenToLibraryIds.clear();
+		libraryIdToPrimaryCollectionToken.clear();
 
 		allProductsInOverDrive.clear();
 		allAdvantageCollections.clear();
