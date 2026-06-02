@@ -622,6 +622,9 @@ class HooplaProcessor2 {
 		if (normalizedRating.isEmpty()) {
 			return null;
 		}
+		if (normalizedRating.startsWith("NR")) {
+			return "Not Rated";
+		}
 
 		switch (normalizedRating) {
 			case "PG13":
