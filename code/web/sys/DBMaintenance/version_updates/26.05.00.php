@@ -230,7 +230,8 @@ function getUpdates26_05_00(): array {
 			'description' => 'Add overdriveAdvantageId column to library_overdrive_settings',
 			'continueOnError' => false,
 			'sql' => [
-				'ALTER TABLE library_overdrive_settings ADD COLUMN overdriveAdvantageId int(11) DEFAULT 0'
+				'ALTER TABLE library_overdrive_settings ADD COLUMN overdriveAdvantageId int(11) DEFAULT 0',
+				"ALTER TABLE library_overdrive_settings MODIFY COLUMN overdriveAdvantageProductsKey VARCHAR(255) DEFAULT ''",
 			]
 		],//add_overdriveAdvantageId
 
