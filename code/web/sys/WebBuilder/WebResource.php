@@ -491,14 +491,14 @@ class WebResource extends DB_LibraryLinkedObject {
 		$librariesWithAccess = $this->getAllowableLibraries();
 		if($requireLoginUnlessInLibrary) {
 			$activeLibrary = $locationSingleton->getActiveLocation();
-			$user = UserAccount::getLoggedInUser();
-			if($user) {
-				if($activeLibrary != null) {
-					$activeLibraryId = $activeLibrary->libraryId;
-					if (in_array($activeLibraryId, $librariesWithAccess)) {
-						return true;
-					}
+			if ($activeLibrary != null) {
+				$activeLibraryId = $activeLibrary->libraryId;
+				if (in_array($activeLibraryId, $librariesWithAccess)) {
+					return true;
 				}
+			}
+			$user = UserAccount::getLoggedInUser();
+			if ($user) {
 				$userHomeLibrary = $user->getHomeLibrary();
 				if($userHomeLibrary) {
 					$userHomeLibraryId = $userHomeLibrary->libraryId;
@@ -506,8 +506,6 @@ class WebResource extends DB_LibraryLinkedObject {
 						return true;
 					}
 				}
-			} else {
-				return false;
 			}
 		} else {
 			return true;
